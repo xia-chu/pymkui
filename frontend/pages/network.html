@@ -1,0 +1,40 @@
+<div class="space-y-6">
+    <div class="flex justify-between items-center mb-4">
+        <div class="flex items-center gap-3">
+            <div class="bg-white/20 p-3 rounded-full">
+                <i class="fa fa-link text-white text-xl"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">连接管理</h2>
+        </div>
+        <button id="refreshNetwork" class="bg-gradient-primary text-white px-6 py-2 rounded-lg font-semibold hover:shadow-neon transition-all duration-300 hover:-translate-y-1">
+            <i class="fa fa-refresh mr-2"></i>刷新
+        </button>
+    </div>
+
+    <div class="bg-white/5 rounded-xl p-6 shadow-lg border border-white/10">
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead>
+                    <tr class="border-b border-white/10">
+                        <th class="text-left py-4 px-4 text-white font-semibold">标识符</th>
+                        <th class="text-left py-4 px-4 text-white font-semibold">类型ID</th>
+                        <th class="text-left py-4 px-4 text-white font-semibold">类型</th>
+                        <th class="text-left py-4 px-4 text-white font-semibold">本地IP</th>
+                        <th class="text-left py-4 px-4 text-white font-semibold">本地端口</th>
+                        <th class="text-left py-4 px-4 text-white font-semibold">远端IP</th>
+                        <th class="text-left py-4 px-4 text-white font-semibold">远端端口</th>
+                        <th class="text-left py-4 px-4 text-white font-semibold">操作</th>
+                    </tr>
+                </thead>
+                <tbody id="networkTableBody">
+                    <tr>
+                        <td colspan="8" class="p-10 text-center">
+                            <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mx-auto mb-4"></div>
+                            <span class="text-white/60 font-semibold">加载中...</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

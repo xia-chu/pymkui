@@ -346,6 +346,10 @@ const Api = {
         return this.request('/index/api/getMediaPlayerList', { body: { schema, vhost, app, stream } });
     },
 
+    async getNetworkList() {
+        return this.request('/index/api/getAllSession');
+    },
+
     clearAuth() {
         this.cookie = '';
         localStorage.removeItem('serverUrl');

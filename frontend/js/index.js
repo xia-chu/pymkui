@@ -21,7 +21,8 @@ const pageNames = {
     'push-proxy': '推流代理',
     'auth': '鉴权管理',
     'settings': '服务配置',
-    'whip': '在线推流'
+    'whip': '在线推流',
+    'network': '连接管理'
 };
 
 const pageIcons = {
@@ -31,7 +32,8 @@ const pageIcons = {
     'push-proxy': 'fa-upload',
     'auth': 'fa-lock',
     'settings': 'fa-cog',
-    'whip': 'fa-podcast'
+    'whip': 'fa-podcast',
+    'network': 'fa-link'
 };
 
 function initTabs() {
@@ -160,6 +162,9 @@ function loadPageData(pageName) {
             break;
         case 'whip':
             loadWhipPage();
+            break;
+        case 'network':
+            loadNetworkPage();
             break;
         default:
             break;
@@ -490,6 +495,54 @@ async function loadWhipPage() {
         }
     } catch (error) {
         console.error('加载whip页面时发生错误:', error);
+        content.innerHTML = `
+            <div class="text-center p-10 text-white/60 font-semibold">
+                网络错误: ${error.message}
+            </div>
+        `;
+    }
+}
+
+async function loadNetworkPage() {
+    const content = document.getElementById('network-content');
+    console.log('开始加载network页面...');
+    
+    content.innerHTML = `
+        <div class="flex justify-center items-center h-64">
+            <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mx-auto mb-4"></div>
+            <span class="text-white/60 font-semibold">加载中...</span>
+        </div>
+    `;
+    
+    try {
+        console.log('正在获取network.html文件...');
+        const response = await fetch('pages/network.html');
+        console.log('network.html文件获取成功，状态:', response.status);
+        
+        if (response.ok) {
+            const html = await response.text();
+            console.log('network.html文件内容长度:', html.length);
+            content.innerHTML = html;
+            console.log('network.html文件内容已加载到页面');
+            
+            setTimeout(() => {
+                console.log('开始初始化network功能...');
+                if (typeof initNetwork === 'function') {
+                    initNetwork();
+                } else {
+                    console.error('initNetwork函数未定义');
+                }
+            }, 100);
+        } else {
+            console.error('加载network.html文件失败，状态:', response.status);
+            content.innerHTML = `
+                <div class="text-center p-10 text-white/60 font-semibold">
+                    加载网络链接页面失败
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('加载network页面时发生错误:', error);
         content.innerHTML = `
             <div class="text-center p-10 text-white/60 font-semibold">
                 网络错误: ${error.message}

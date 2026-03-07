@@ -91,7 +91,9 @@
             <div class="bg-gradient-primary h-16 flex items-center justify-center relative overflow-hidden">
                 <div class="absolute inset-0 animate-glow"></div>
                 <h1 class="text-white text-2xl font-bold z-10 flex items-center gap-2">
-                    <i class="fa fa-play-circle"></i>
+                    <div class="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                        <i class="fa fa-play-circle text-white"></i>
+                    </div>
                     <span>ZLMediaKit</span>
                 </h1>
             </div>
@@ -103,6 +105,12 @@
                         <a href="#" data-page="dashboard" class="flex items-center px-6 py-4 text-white font-semibold text-lg border-l-4 border-primary bg-white/5 hover:bg-white/10 transition-all duration-300 hover:translate-x-2">
                             <i class="fa fa-dashboard text-xl mr-4"></i>
                             <span>状态概览</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#" data-page="network" class="flex items-center px-6 py-4 text-white/80 font-semibold text-lg border-l-4 border-transparent hover:bg-white/10 transition-all duration-300 hover:translate-x-2">
+                            <i class="fa fa-link text-xl mr-4"></i>
+                            <span>连接管理</span>
                         </a>
                     </li>
                     <li>
@@ -225,6 +233,15 @@
                         </div>
                     </div>
                 </div>
+                
+                <!-- 网络链接页面 -->
+                <div class="page absolute inset-0 flex flex-col hidden" id="network-page">
+                    <div class="flex-1 overflow-y-auto p-6">
+                        <div id="network-content">
+                            <!-- 内容将通过AJAX加载 -->
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -243,6 +260,7 @@
     <script src="js/streams.js"></script>
     <script src="js/whip.js"></script>
     <script src="js/settings.js"></script>
+    <script src="js/network.js"></script>
     <script src="js/index.js"></script>
 </body>
 </html>
