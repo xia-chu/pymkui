@@ -66,6 +66,7 @@ async function loadStreams() {
                         <td class="p-4">
                             <button class="bg-gradient-primary text-white px-3 py-1 rounded-lg text-sm font-semibold hover:shadow-neon transition-colors mr-2" onclick="playStream('${stream.app}', '${stream.stream}', '${stream.schema}')">播放</button>
                             <button class="bg-gradient-accent text-white px-3 py-1 rounded-lg text-sm font-semibold hover:shadow-neon transition-colors mr-2" onclick="showStreamInfo('${stream.schema}', '${vhost}', '${stream.app}', '${stream.stream}')">查看</button>
+                            <button class="bg-blue-500 text-white px-3 py-1 rounded-lg text-sm font-semibold hover:shadow-neon transition-colors mr-2" onclick="showStreamPlayers('${stream.schema}', '${vhost}', '${stream.app}', '${stream.stream}')">观众</button>
                             <button class="bg-red-500 text-white px-3 py-1 rounded-lg text-sm font-semibold hover:shadow-neon transition-colors" onclick="stopStream('${stream.schema}', '${vhost}', '${stream.app}', '${stream.stream}')">停止</button>
                         </td>
                     </tr>
@@ -715,6 +716,76 @@ function showConfirmModal(title, message, onConfirm, onCancel) {
             modal.remove();
         }
     });
+}
+
+async function showStreamPlayers(schema, vhost, app, stream) {
+    try {
+        console.log('获取播放器列表:', schema, vhost, app, stream);
+        
+        const result = await Api.getMediaPlayerList(schema, vhost, app, stream);
+        
+        if (result.code !== 0) {
+            showToast('获取播放器列表失败: ' + (result.msg || '未知错误'), 'error');
+            return;
+        }
+        
+        const players = result.data || [];
+        
+        const modal = document.createElement('div');
+        modal.className = 'absolute inset-0 bg-black/80 flex items-center justify-center overflow-y-auto pointer-events-auto';
+        modal.setAttribute('data-modal', 'streams');
+        
+        let playersHtml = '';
+        if (players.length === 0) {
+            playersHtml = `
+                <div class="p-8 text-center text-white/60">
+                    暂无播放器连接
+                </div>
+            `;
+        } else {
+            playersHtml = `
+                <div class="space-y-4">
+                    ${players.map((player, index) => `
+                        <div class="bg-white/5 rounded-lg p-4">
+                            <div class="grid grid-cols-2 gap-3 text-sm">
+                                <div><span class="text-white/60">标识符:</span> <span class="text-white">${player.identifier || '-'}</span></div>
+                                <div><span class="text-white/60">类型:</span> <span class="text-white">${player.typeid || '-'}</span></div>
+                                <div><span class="text-white/60">本地IP:</span> <span class="text-white">${player.local_ip || '-'}</span></div>
+                                <div><span class="text-white/60">本地端口:</span> <span class="text-white">${player.local_port || '-'}</span></div>
+                                <div><span class="text-white/60">远端IP:</span> <span class="text-white">${player.peer_ip || '-'}</span></div>
+                                <div><span class="text-white/60">远端端口:</span> <span class="text-white">${player.peer_port || '-'}</span></div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+        
+        modal.innerHTML = `
+            <div class="bg-gray-900 rounded-xl p-6 max-w-4xl w-full mx-4 my-8 border border-white/20" onclick="event.stopPropagation()">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xl font-bold text-white">播放器列表: ${app}/${stream}</h3>
+                    <button class="text-white/60 hover:text-white" onclick="this.closest('.absolute').remove()">
+                        <i class="fa fa-times text-2xl"></i>
+                    </button>
+                </div>
+                <div class="max-h-[70vh] overflow-y-auto">
+                    ${playersHtml}
+                </div>
+            </div>
+        `;
+        document.getElementById('streams-modal-container').appendChild(modal);
+        
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        });
+        
+    } catch (error) {
+        console.error('获取播放器列表失败:', error);
+        showToast('获取播放器列表失败: ' + error.message, 'error');
+    }
 }
 
 async function stopStream(schema, vhost, app, stream) {
