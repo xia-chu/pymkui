@@ -1,18 +1,34 @@
 const jessibucaInstances = [];
+const hlsInstances = [];
 
 function cleanupStreamsPage() {
     console.log('清理视频管理页面资源，销毁所有播放器实例');
+    
+    // 销毁Jessibuca播放器实例
     jessibucaInstances.forEach(instance => {
         try {
             if (instance) {
                 instance.destroy();
             }
         } catch (error) {
-            console.error('销毁播放器实例失败:', error);
+            console.error('销毁Jessibuca播放器实例失败:', error);
         }
     });
     jessibucaInstances.length = 0;
     
+    // 销毁HLS播放器实例
+    hlsInstances.forEach(instance => {
+        try {
+            if (instance) {
+                instance.destroy();
+            }
+        } catch (error) {
+            console.error('销毁HLS播放器实例失败:', error);
+        }
+    });
+    hlsInstances.length = 0;
+    
+    // 清空模态框容器
     const streamsModalContainer = document.getElementById('streams-modal-container');
     if (streamsModalContainer) {
         streamsModalContainer.innerHTML = '';
@@ -215,7 +231,7 @@ function playWithNative(app, stream, schema) {
             <div class="bg-gray-900 rounded-xl p-6 max-w-4xl w-full mx-4 border border-white/20" onclick="event.stopPropagation()">
                 <div class="flex justify-between items-center mb-4">
                     <h3 class="text-xl font-bold text-white">播放流: ${app}/${stream}</h3>
-                    <button class="text-white/60 hover:text-white" onclick="this.closest('.absolute').remove()">
+                    <button class="text-white/60 hover:text-white">
                         <i class="fa fa-times text-2xl"></i>
                     </button>
                 </div>
@@ -229,37 +245,44 @@ function playWithNative(app, stream, schema) {
         `;
         document.getElementById('streams-modal-container').appendChild(modal);
         
-        modal.addEventListener('click', function(e) {
-            if (e.target === modal) {
-                modal.remove();
-            }
-        });
-        
         const playUrl = generatePlayUrl(app, stream, schema);
         
         console.log('原生播放URL:', playUrl);
         
         const video = document.getElementById('nativeVideo');
         
+        let hlsInstance = null;
+        
+        const destroyPlayer = () => {
+            if (hlsInstance) {
+                console.log('销毁HLS播放器');
+                hlsInstance.destroy();
+                const index = hlsInstances.indexOf(hlsInstance);
+                if (index > -1) {
+                    hlsInstances.splice(index, 1);
+                }
+                hlsInstance = null;
+            }
+            if (video && !video.paused) {
+                video.pause();
+            }
+        };
+        
         if (schema === 'hls' || schema === 'hls.fmp4') {
             if (video.canPlayType('application/vnd.apple.mpegurl')) {
                 video.src = playUrl;
             } else if (typeof Hls !== 'undefined' && Hls.isSupported()) {
-                const hls = new Hls();
-                hls.loadSource(playUrl);
-                hls.attachMedia(video);
-                hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                hlsInstance = new Hls();
+                hlsInstances.push(hlsInstance);
+                hlsInstance.loadSource(playUrl);
+                hlsInstance.attachMedia(video);
+                hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
                     console.log('HLS manifest解析成功');
                     video.play();
                 });
-                hls.on(Hls.Events.ERROR, (event, data) => {
+                hlsInstance.on(Hls.Events.ERROR, (event, data) => {
                     console.error('HLS播放错误:', data);
                     showToast('HLS播放错误: ' + data.type, 'error');
-                });
-                
-                modal.querySelector('button').addEventListener('click', () => {
-                    console.log('销毁HLS播放器');
-                    hls.destroy();
                 });
             } else {
                 showToast('浏览器不支持HLS播放', 'error');
@@ -272,6 +295,18 @@ function playWithNative(app, stream, schema) {
         video.play().catch(error => {
             console.error('播放失败:', error);
             showToast('播放失败: ' + error.message, 'error');
+        });
+        
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) {
+                destroyPlayer();
+                modal.remove();
+            }
+        });
+        
+        modal.querySelector('button').addEventListener('click', () => {
+            destroyPlayer();
+            modal.remove();
         });
         
     } catch (error) {
