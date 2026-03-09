@@ -31,7 +31,7 @@ async function loadStreams() {
     
     tbody.innerHTML = `
         <tr>
-            <td colspan="8" class="p-10 text-center">
+            <td colspan="9" class="p-10 text-center">
                 <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mx-auto mb-4"></div>
                 <span class="text-white/60 font-semibold">加载中...</span>
             </td>
@@ -55,7 +55,7 @@ async function loadStreams() {
             if (data.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="8" class="p-10 text-center text-white/60 font-semibold">
+                        <td colspan="9" class="p-10 text-center text-white/60 font-semibold">
                             暂无媒体流
                         </td>
                     </tr>
@@ -89,6 +89,7 @@ async function loadStreams() {
                         <td class="p-4 text-white">${stream.app || '-'}</td>
                         <td class="p-4 text-white">${stream.stream || '-'}</td>
                         <td class="p-4 text-white">${stream.schema || '-'}</td>
+                        <td class="p-4 text-white">${stream.originTypeStr || '-'}</td>
                         <td class="p-4 text-white">${readerCount}</td>
                         <td class="p-4 text-white">${aliveTime}</td>
                         <td class="p-4 text-white">${bitrate}</td>
@@ -107,7 +108,7 @@ async function loadStreams() {
         } else {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="8" class="p-10 text-center text-white/60 font-semibold">
+                    <td colspan="9" class="p-10 text-center text-white/60 font-semibold">
                         加载失败: ${result.msg || '未知错误'}
                     </td>
                 </tr>
@@ -116,7 +117,7 @@ async function loadStreams() {
     } catch (error) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="8" class="p-10 text-center text-white/60 font-semibold">
+                <td colspan="9" class="p-10 text-center text-white/60 font-semibold">
                     网络错误: ${error.message}
                 </td>
             </tr>
