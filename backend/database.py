@@ -116,7 +116,6 @@ class Database:
         """Close database connection"""
         if hasattr(self, 'connection') and self.connection:
             self.connection.close()
-            mk_logger.log_info(f"Database connection closed")
     
     def add_proxy(self, app: str, stream: str, url: str, enabled: bool = True) -> Optional[Dict[str, Any]]:
         """Add a proxy configuration"""

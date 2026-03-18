@@ -5,7 +5,7 @@ import mk_loader
 import asyncio
 
 from shared_loop import SharedLoop
-from py_http_api import app
+from py_http_api import app, db
 from starlette.routing import Match
 
 def submit_coro(scope, body, send):
@@ -71,10 +71,7 @@ def on_start():
 def _restore_pull_proxies():
     """启动时从数据库读取所有 on_demand=0 的拉流代理，调用 mk_loader.add_stream_proxy 恢复"""
     try:
-        from database import Database
-        db = Database()
         proxies = db.get_all_pull_proxies()
-        db.close()
     except Exception as e:
         mk_logger.log_warn(f"[restore_pull_proxies] 读取数据库失败: {e}")
         return
@@ -169,15 +166,12 @@ def on_stream_not_found(args: dict, sender: dict, invoker) -> bool:
 
     # 查询数据库，看是否有匹配的按需拉流代理
     try:
-        from database import Database
-        db = Database()
         db.cursor.execute(
             "SELECT * FROM pull_proxies WHERE vhost=? AND app=? AND stream=? AND on_demand=1",
             (vhost, app, stream)
         )
         row = db.cursor.fetchone()
         proxy = dict(row) if row else None
-        db.close()
     except Exception as e:
         mk_logger.log_warn(f"[on_stream_not_found] 查询数据库失败: {e}")
         proxy = None
