@@ -29,7 +29,7 @@ const pageNames = {
 const pageIcons = {
     'dashboard': 'fa-dashboard',
     'streams': 'fa-video-camera',
-    'pull-proxy': 'fa-download',
+    'pull-proxy': 'fa-cloud-download',
     'push-proxy': 'fa-upload',
     'auth': 'fa-lock',
     'settings': 'fa-cog',
