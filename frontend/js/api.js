@@ -49,9 +49,17 @@ const Api = {
             const response = await fetch(url, mergedOptions);
             const data = await response.json();
             
-            // 保存 cookie 如果返回 -100
-            if (data.code === -100 && data.cookie) {
-                this.setCookie(data.cookie);
+            // 任意接口返回 -100（未登录），保存新 cookie 并自动跳转登录页
+            if (data.code === -100) {
+                if (data.cookie) {
+                    this.setCookie(data.cookie);
+                }
+                const currentPath = window.location.pathname;
+                const isLoginPage = currentPath.includes('login.html');
+                if (!isLoginPage) {
+                    window.location.href = 'login.html';
+                }
+                return data;
             }
             
             return data;
