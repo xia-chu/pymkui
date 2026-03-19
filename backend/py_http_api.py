@@ -470,40 +470,6 @@ async def get_protocol_options(id: int = Query(..., description="预设ID")):
     summary="添加拉流代理",
 )
 async def add_stream_proxy(request: Request):
-    # Cookie 解析调试信息
-    print("=== Cookie 解析调试 ===")
-    print("调试 1: headers 原始 items:", list(request.headers.items()))
-    print("调试 2: headers.get('cookie'):", request.headers.get('cookie'))
-    print("调试 3: headers.get('Cookie'):", request.headers.get('Cookie'))
-    print("调试 4: request._cookies (如果存在):", getattr(request, '_cookies', 'N/A'))
-
-    # 手动查找 cookie header
-    cookie_header = None
-    for key, value in request.headers.items():
-        if key.lower() == 'cookie':
-            cookie_header = value
-            break
-    print(f"调试 5: 手动查找的 cookie header: {cookie_header}")
-
-    # 手动解析测试
-    if cookie_header:
-        from urllib.parse import unquote
-        parsed = {}
-        for item in cookie_header.split(';'):
-            item = item.strip()
-            if '=' in item:
-                key, value = item.split('=', 1)
-                parsed[key.strip()] = unquote(value.strip())
-        print(f"调试 6: 手动解析的 cookies: {parsed}")
-
-    print(f"调试 7: request.cookies (最终结果): {request.cookies}")
-    print("=== 调试结束 ===\n")
-
-    headers_dict = {}
-    for item in request.headers.items():
-        headers_dict[item[0]] = item[1]
-
-
     """
     添加拉流代理
 
@@ -602,8 +568,6 @@ async def add_stream_proxy(request: Request):
             except:
                 pass
         # 透传客户端 cookie
-        forward_headers = get_forward_headers(request)
- 
         response = await client.post(zlm_url, data=zlm_params, headers=get_forward_headers(request))
         result = response.json()
         
