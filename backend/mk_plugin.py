@@ -1,5 +1,8 @@
 import os
+import sys
 import json
+import shutil
+import subprocess
 import mk_logger
 import mk_loader
 import asyncio
@@ -49,6 +52,50 @@ def check_route(scope) -> bool:
                 return True
     return False
 
+def _resolve_ffmpeg_bin(configured: str) -> str:
+    """
+    确保 ffmpeg 可执行文件路径有效。
+    1. 若配置的路径存在且可执行，直接返回。
+    2. 否则用 shutil.which 在 PATH 中查找（跨平台）。
+    3. Unix 下额外尝试 whereis 作为补充。
+    返回找到的路径，找不到返回空字符串。
+    """
+    # 1. 配置路径可用则直接返回
+    if configured and os.path.isfile(configured) and os.access(configured, os.X_OK):
+        mk_logger.log_info(f"[ffmpeg] 使用已配置路径: {configured}")
+        return configured
+
+    if configured:
+        mk_logger.log_warn(f"[ffmpeg] 已配置路径不可用: {configured}，尝试自动查找")
+
+    # 2. shutil.which（跨平台，Windows 自动追加 .exe）
+    found = shutil.which("ffmpeg")
+    if found:
+        mk_logger.log_info(f"[ffmpeg] PATH 中找到: {found}")
+        return found
+
+    # 3. Unix 专属：whereis ffmpeg
+    if sys.platform != "win32":
+        try:
+            out = subprocess.check_output(
+                ["whereis", "-b", "ffmpeg"],
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+            ).decode().strip()
+            # 输出格式: "ffmpeg: /usr/bin/ffmpeg ..."
+            parts = out.split(":")
+            if len(parts) >= 2:
+                candidates = parts[1].split()
+                for candidate in candidates:
+                    if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                        mk_logger.log_info(f"[ffmpeg] whereis 找到: {candidate}")
+                        return candidate
+        except Exception as e:
+            mk_logger.log_warn(f"[ffmpeg] whereis 查找失败: {e}")
+
+    return ""
+
+
 def on_start():
     mk_logger.log_info(f"on_start, secret: {mk_loader.get_config('api.secret')}")
     # 强制cookie登录
@@ -60,6 +107,14 @@ def on_start():
     frontend_path = os.path.abspath(os.path.join(current_dir, '..', 'frontend'))
     mk_loader.set_config('http.rootPath', frontend_path)
     mk_logger.log_info(f"set http.rootPath to {frontend_path}")
+
+    ffmpeg_bin = mk_loader.get_config('ffmpeg.bin')
+    ffmpeg_bin = _resolve_ffmpeg_bin(ffmpeg_bin)
+    if ffmpeg_bin:
+        mk_loader.set_config('ffmpeg.bin', ffmpeg_bin)
+        mk_logger.log_info(f"set ffmpeg.bin to {ffmpeg_bin}")
+    else:
+        mk_logger.log_warn("ffmpeg not found, ffmpeg.bin not set")
 
     mk_loader.update_config()
     mk_loader.set_fastapi(check_route, submit_coro)
