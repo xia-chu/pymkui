@@ -178,6 +178,10 @@ function _renderPullProxyPage() {
                         onclick="viewPullProxyDetail(${proxy.id})">
                         详情
                     </button>
+                    <button class="bg-green-600/80 text-white px-3 py-1 rounded-lg text-sm font-semibold hover:shadow-neon transition-colors"
+                        onclick="navigateToStreams('${(proxy.vhost || '__defaultVhost__').replace(/'/g, "\\'")}', '${(proxy.app || '').replace(/'/g, "\\'")}', '${(proxy.stream || '').replace(/'/g, "\\'")}')">
+                        查看流
+                    </button>
                     <button class="bg-red-500/80 text-white px-3 py-1 rounded-lg text-sm font-semibold hover:shadow-neon transition-colors"
                         onclick="deletePullProxy('${proxy.vhost || '__defaultVhost__'}', '${proxy.app}', '${proxy.stream}', ${proxy.id})">
                         删除
@@ -1061,7 +1065,8 @@ function showProxyStatusDetail(cacheKey) {
 
     const modal = document.createElement('div');
     modal.id = 'proxyStatusDetailModal';
-    modal.className = 'fixed inset-0 bg-black/80 backdrop-blur-sm flex items-start justify-center z-50 overflow-y-auto py-8';
+    modal.className = 'absolute inset-0 bg-black/80 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-8 pointer-events-auto';
+    modal.style.zIndex = '20';
     modal.innerHTML = `
         <div class="bg-gray-900 rounded-xl p-6 max-w-2xl w-full mx-4 border border-white/20 shadow-2xl" onclick="event.stopPropagation()">
 
@@ -1071,7 +1076,7 @@ function showProxyStatusDetail(cacheKey) {
                     <h3 class="text-xl font-bold text-white">拉流状态详情</h3>
                     <span class="px-3 py-1 rounded-full text-xs font-semibold ${sInfo.cls}">${sInfo.label}</span>
                 </div>
-                <button onclick="document.getElementById('proxyStatusDetailModal').remove()" class="text-white/60 hover:text-white">
+                <button onclick="window._closeProxyStatusModal()" class="text-white/60 hover:text-white">
                     <i class="fa fa-times text-2xl"></i>
                 </button>
             </div>
@@ -1155,15 +1160,35 @@ function showProxyStatusDetail(cacheKey) {
                     class="flex items-center gap-2 bg-primary/30 text-white px-5 py-2 rounded-lg font-semibold hover:bg-primary/50 transition-colors">
                     <i class="fa fa-refresh"></i>刷新
                 </button>
-                <button onclick="document.getElementById('proxyStatusDetailModal').remove()"
+                <button onclick="window._closeProxyStatusModal()"
                     class="bg-white/10 text-white px-5 py-2 rounded-lg font-semibold hover:bg-white/20 transition-colors">
                     关闭
                 </button>
             </div>
         </div>
     `;
-    document.body.appendChild(modal);
-    modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+    // 挂载到专属容器（absolute 定位，只覆盖当前标签页）
+    const container = document.getElementById('pull-proxy-modal-container');
+    if (container) {
+        container.style.pointerEvents = 'auto';
+        container.appendChild(modal);
+    } else {
+        modal.style.position = 'fixed';
+        modal.style.zIndex = '9999';
+        document.body.appendChild(modal);
+    }
+
+    // 统一关闭函数：移除弹窗并还原容器鼠标事件
+    const closeStatusModal = () => {
+        const el = document.getElementById('proxyStatusDetailModal');
+        if (el) el.remove();
+        const c = document.getElementById('pull-proxy-modal-container');
+        if (c) c.style.pointerEvents = 'none';
+    };
+    // 暴露到 window，供 innerHTML 中的 onclick 调用
+    window._closeProxyStatusModal = closeStatusModal;
+
+    modal.addEventListener('click', e => { if (e.target === modal) closeStatusModal(); });
 
     // 刷新按钮：重新查询 ZLM 状态后重建弹窗
     document.getElementById('proxyStatusRefreshBtn').addEventListener('click', async function () {
@@ -1182,7 +1207,7 @@ function showProxyStatusDetail(cacheKey) {
         } catch (e) {
             showToast('刷新失败: ' + e.message, 'error');
         }
-        modal.remove();
+        closeStatusModal();
         // 重新打开弹窗（若仍有数据）
         if (_pullProxyStatusCache['__detail__' + cacheKey]) {
             showProxyStatusDetail(cacheKey);

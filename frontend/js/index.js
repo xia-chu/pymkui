@@ -61,6 +61,26 @@ function addTab(pageName, title, icon) {
     renderTabs();
 }
 
+/**
+ * 跳转到视频管理页面，并自动应用 vhost/app/stream 筛选
+ * @param {string} vhost  虚拟主机，如 __defaultVhost__
+ * @param {string} app    应用名
+ * @param {string} stream 流ID
+ */
+function navigateToStreams(vhost, app, stream) {
+    // 把筛选参数暂存，loadStreamsPage 初始化完成后读取
+    window._pendingStreamsFilter = { vhost: vhost || '', app: app || '', stream: stream || '' };
+
+    const existingTab = tabs.find(tab => tab.pageName === 'streams');
+    if (existingTab) {
+        // 页面已存在：switchTab 会调用 loadPageData → loadStreamsPage 重新加载内容
+        switchTab('streams');
+    } else {
+        // 页面不存在：addTab 触发 switchTab → loadStreamsPage
+        addTab('streams', '视频管理', 'fa-video-camera');
+    }
+}
+
 function switchTab(pageName) {
     activeTab = pageName;
     
@@ -259,12 +279,39 @@ async function loadStreamsPage() {
             setTimeout(() => {
                 console.log('开始初始化streams功能...');
                 if (typeof loadStreams === 'function') {
+                    // 若有待填充的跳转筛选参数，先应用
+                    if (window._pendingStreamsFilter) {
+                        const f = window._pendingStreamsFilter;
+                        window._pendingStreamsFilter = null;
+                        const vhostEl = document.getElementById('vhostFilter');
+                        const appEl = document.getElementById('appFilter');
+                        const streamEl = document.getElementById('streamFilter');
+                        if (vhostEl && f.vhost !== undefined) vhostEl.value = f.vhost;
+                        if (appEl && f.app !== undefined) appEl.value = f.app;
+                        if (streamEl && f.stream !== undefined) streamEl.value = f.stream;
+                    }
                     loadStreams();
+                    
+                    const vhostFilter = document.getElementById('vhostFilter');
+                    if (vhostFilter) {
+                        vhostFilter.addEventListener('input', loadStreams);
+                        console.log('Vhost筛选事件监听器已绑定');
+                    }
                     
                     const protocolFilter = document.getElementById('protocolFilter');
                     if (protocolFilter) {
                         protocolFilter.addEventListener('change', loadStreams);
                         console.log('协议筛选事件监听器已绑定');
+                    }
+                    
+                    const appFilter = document.getElementById('appFilter');
+                    if (appFilter) {
+                        appFilter.addEventListener('input', loadStreams);
+                    }
+                    
+                    const streamFilter = document.getElementById('streamFilter');
+                    if (streamFilter) {
+                        streamFilter.addEventListener('input', loadStreams);
                     }
                     
                     const refreshButton = document.getElementById('refreshStreams');

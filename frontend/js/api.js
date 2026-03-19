@@ -300,9 +300,10 @@ const Api = {
         return this.request('/index/api/getApiList');
     },
 
-    async getMediaList(schema, app, stream) {
+    async getMediaList(schema, vhost, app, stream) {
         const body = {};
         if (schema) body.schema = schema;
+        if (vhost) body.vhost = vhost;
         if (app) body.app = app;
         if (stream) body.stream = stream;
         return this.request('/index/api/getMediaList', { body });
