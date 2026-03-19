@@ -127,8 +127,12 @@ function _renderPullProxyPage() {
     let html = '';
     pageData.forEach(proxy => {
         const onDemand = proxy.on_demand ? 1 : 0;
-        const onDemandClass = onDemand ? 'bg-yellow-500/20 text-yellow-400' : 'bg-white/10 text-white/40';
+        const onDemandClass = onDemand
+            ? 'bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/40 cursor-pointer'
+            : 'bg-blue-500/20 text-blue-300 hover:bg-blue-500/40 cursor-pointer';
         const onDemandText = onDemand ? '按需' : '立即';
+        const onDemandIcon = onDemand ? 'fa-clock-o' : 'fa-play-circle';
+        const onDemandTitle = onDemand ? '当前按需模式，点击切换为立即拉流' : '当前立即模式，点击切换为按需拉流';
         const createdAt = proxy.created_at || '-';
 
         // ---- 状态列 ----
@@ -169,7 +173,11 @@ function _renderPullProxyPage() {
                 <td class="p-4 text-white/80 text-sm whitespace-nowrap overflow-hidden text-ellipsis" style="max-width:220px" title="${proxy.url || ''}">${proxy.url || '-'}</td>
                 <td class="p-4 text-white/60 text-sm whitespace-nowrap overflow-hidden text-ellipsis" style="max-width:160px" title="${proxy.remark || ''}">${proxy.remark || '-'}</td>
                 <td class="p-4">
-                    <span class="px-3 py-1 rounded-full text-sm font-semibold ${onDemandClass}">${onDemandText}</span>
+                    <button class="px-3 py-1 rounded-full text-sm font-semibold transition-colors ${onDemandClass}"
+                        title="${onDemandTitle}"
+                        onclick="togglePullProxyMode(${proxy.id}, ${onDemand})">
+                        <i class="fa ${onDemandIcon} mr-1"></i>${onDemandText}
+                    </button>
                 </td>
                 <td class="p-4">${statusHtml}</td>
                 <td class="p-4 text-white/60 text-sm">${createdAt}</td>
@@ -990,6 +998,37 @@ async function deletePullProxy(vhost, app, stream, dbId) {
                 }
             } catch (error) {
                 showToast('删除失败: ' + error.message, 'error');
+            }
+        }
+    );
+}
+
+/**
+ * 切换拉流代理模式
+ * @param {number} id        数据库 ID
+ * @param {number} onDemand  当前模式：1=按需，0=立即
+ */
+async function togglePullProxyMode(id, onDemand) {
+    const fromText = onDemand ? '按需' : '立即';
+    const toText   = onDemand ? '立即' : '按需';
+    const msg      = onDemand
+        ? `确定将该代理切换为<b>立即模式</b>？<br>将立即向 ZLMediaKit 发起拉流请求。`
+        : `确定将该代理切换为<b>按需模式</b>？<br>将停止当前拉流，等待有观众时再自动拉起。`;
+
+    showConfirmModal(
+        `切换模式：${fromText} → ${toText}`,
+        msg,
+        async function () {
+            try {
+                const result = await Api.toggleStreamProxyMode(id);
+                if (result.code === 0) {
+                    showToast(result.msg || '切换成功', 'success');
+                    loadPullProxyList();
+                } else {
+                    showToast('切换失败: ' + (result.msg || '未知错误'), 'error');
+                }
+            } catch (error) {
+                showToast('切换失败: ' + error.message, 'error');
             }
         }
     );

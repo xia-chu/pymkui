@@ -425,6 +425,10 @@ const Api = {
         return this.request(`/index/pyapi/getStreamProxy?id=${id}`, { method: 'GET' });
     },
 
+    async toggleStreamProxyMode(id) {
+        return this.request('/index/pyapi/toggleStreamProxyMode', { body: { id } });
+    },
+
     async listStreamProxy(key) {
         return this.request(`/index/api/listStreamProxy?key=${encodeURIComponent(key)}`, { method: 'GET' });
     },

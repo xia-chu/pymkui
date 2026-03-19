@@ -712,3 +712,101 @@ async def get_stream_proxy(id: int = Query(..., description="代理ID")):
     except Exception as e:
         mk_logger.log_warn(f"获取拉流代理详情失败: {e}")
         return {"code": -1, "msg": f"获取失败: {str(e)}"}
+
+
+@app.post(
+    "/index/pyapi/toggleStreamProxyMode",
+    tags=["拉流代理"],
+    summary="切换拉流代理模式（按需↔立即）",
+)
+async def toggle_stream_proxy_mode(request: Request):
+    """
+    切换拉流代理的 on_demand 模式。
+
+    - 按需(on_demand=1) → 立即(on_demand=0)：
+      调用 ZLM addStreamProxy（force=1 覆盖已有），写库 on_demand=0
+    - 立即(on_demand=0) → 按需(on_demand=1)：
+      调用 ZLM delStreamProxy 停止当前拉流，写库 on_demand=1
+
+    参数：
+    - id: 数据库记录 ID（必选）
+    """
+    try:
+        body_bytes = await request.body()
+        if not body_bytes:
+            return {"code": -1, "msg": "请求体为空"}
+        content_type = request.headers.get("content-type", "")
+        if "application/json" in content_type or not content_type:
+            try:
+                data = json.loads(body_bytes.decode("utf-8"))
+            except Exception:
+                data = {}
+        else:
+            parsed = urllib.parse.parse_qs(body_bytes.decode("utf-8"), keep_blank_values=True)
+            data = {k: v[0] if len(v) == 1 else v for k, v in parsed.items()}
+
+        if not isinstance(data, dict):
+            return {"code": -1, "msg": "参数格式错误"}
+
+        proxy_id = data.get("id")
+        if not proxy_id:
+            return {"code": -1, "msg": "id 参数不能为空"}
+        try:
+            proxy_id = int(proxy_id)
+        except (ValueError, TypeError):
+            return {"code": -1, "msg": "id 格式错误，必须为整数"}
+
+        proxy = db.get_pull_proxy(proxy_id)
+        if not proxy:
+            return {"code": -1, "msg": "代理不存在"}
+
+        vhost  = proxy.get("vhost") or "__defaultVhost__"
+        app    = proxy.get("app") or ""
+        stream = proxy.get("stream") or ""
+        url    = proxy.get("url") or ""
+        key    = f"{vhost}/{app}/{stream}"
+        current_on_demand = int(bool(proxy.get("on_demand", 0)))
+
+        if current_on_demand == 1:
+            # 按需 → 立即：调用 ZLM addStreamProxy（force=1）
+            zlm_url = f"{get_zlm_base_url()}/index/api/addStreamProxy"
+            zlm_params = {"vhost": vhost, "app": app, "stream": stream, "url": url, "force": 1}
+            # 追加保存的自定义/协议参数
+            try:
+                cp = json.loads(proxy.get("custom_params") or "{}")
+                zlm_params.update(cp)
+            except Exception:
+                pass
+            try:
+                pp = json.loads(proxy.get("protocol_params") or "{}")
+                zlm_params.update(pp)
+            except Exception:
+                pass
+            response = await client.post(zlm_url, data=zlm_params, headers=get_forward_headers(request))
+            result = response.json()
+            if result.get("code") != 0:
+                return {"code": -1, "msg": f"ZLM 添加失败: {result.get('msg', '未知错误')}"}
+            db.update_pull_proxy(proxy_id, on_demand=0)
+            return {"code": 0, "msg": "已切换为立即模式", "data": {"on_demand": 0}}
+        else:
+            # 立即 → 按需：调用 ZLM delStreamProxy 停止拉流
+            zlm_url = f"{get_zlm_base_url()}/index/api/delStreamProxy"
+            try:
+                response = await client.post(
+                    zlm_url,
+                    data={"key": key},
+                    headers=get_forward_headers(request),
+                )
+                zlm_result = response.json()
+                if zlm_result.get("code") != 0:
+                    mk_logger.log_warn(
+                        f"ZLM delStreamProxy 返回非 0: {zlm_result.get('msg')}，key={key}"
+                    )
+            except Exception as e:
+                mk_logger.log_warn(f"调用 ZLM delStreamProxy 失败（忽略）: {e}，key={key}")
+            db.update_pull_proxy(proxy_id, on_demand=1)
+            return {"code": 0, "msg": "已切换为按需模式", "data": {"on_demand": 1}}
+
+    except Exception as e:
+        mk_logger.log_warn(f"切换拉流代理模式失败: {e}")
+        return {"code": -1, "msg": f"切换失败: {str(e)}"}
