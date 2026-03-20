@@ -526,6 +526,13 @@ async def add_stream_proxy(request: Request):
         else:
             on_demand = bool(raw_on_demand)
 
+        # force: 强制添加模式，1=拉流失败也写库；同时透传给 ZLM 的 force 参数
+        raw_force = data.get("force", 0)
+        if isinstance(raw_force, str):
+            force = 1 if raw_force in ("1", "true", "yes") else 0
+        else:
+            force = 1 if raw_force else 0
+
         if on_demand:
             # 按需模式：直接写库，不调用 ZLM，等待播放时 ZLM 自动拉流
             proxy_id = db.add_pull_proxy({
@@ -543,13 +550,14 @@ async def add_stream_proxy(request: Request):
             else:
                 return {"code": -1, "msg": "写入数据库失败，vhost/app/stream 组合可能已存在"}
         
-        # 普通模式：先调用 ZLMediaKit 的 addStreamProxy 接口
+        # 普通/强制模式：调用 ZLMediaKit 的 addStreamProxy 接口
         zlm_url = f"{get_zlm_base_url()}/index/api/addStreamProxy"
         zlm_params = {
             "vhost": vhost,
             "app": app,
             "stream": stream,
-            "url": url
+            "url": url,
+            "force": force,   # 强制添加模式：1=拉流失败也写入 ZLM
         }
         
         # 添加自定义参数

@@ -410,15 +410,31 @@ function showPullProxyModal(title, data, serverConfig = {}, readOnly = false, in
                                 </select>
                             </div>
                         </div>
-                        <div>
-                            <label class="block text-white/80 text-sm font-semibold mb-1">RTSP拉流方式(rtp_type)</label>
-                            <select id="rtpType" ${disabledAttr}
-                                class="${inputCls}" style="color:white;">
-                                <option value="" ${!getValue('rtp_type') ? 'selected' : ''}>默认（TCP）</option>
-                                <option value="0" ${getValue('rtp_type') === '0' ? 'selected' : ''}>0 - TCP</option>
-                                <option value="1" ${getValue('rtp_type') === '1' ? 'selected' : ''}>1 - UDP</option>
-                                <option value="2" ${getValue('rtp_type') === '2' ? 'selected' : ''}>2 - 组播</option>
-                            </select>
+                        <div class="flex gap-4 items-center">
+                            <div class="flex-1">
+                                <label class="block text-white/80 text-sm font-semibold mb-1">RTSP拉流方式(rtp_type)</label>
+                                <select id="rtpType" ${disabledAttr}
+                                    class="${inputCls}" style="color:white;">
+                                    <option value="" ${!getValue('rtp_type') ? 'selected' : ''}>默认（TCP）</option>
+                                    <option value="0" ${getValue('rtp_type') === '0' ? 'selected' : ''}>0 - TCP</option>
+                                    <option value="1" ${getValue('rtp_type') === '1' ? 'selected' : ''}>1 - UDP</option>
+                                    <option value="2" ${getValue('rtp_type') === '2' ? 'selected' : ''}>2 - 组播</option>
+                                </select>
+                            </div>
+                            ${!readOnly ? `
+                            <div class="flex-1 flex items-center self-end pb-1">
+                                <label class="flex items-center gap-3 cursor-pointer select-none">
+                                    <div class="relative flex-shrink-0">
+                                        <input type="checkbox" id="forceAdd" class="sr-only peer">
+                                        <div class="w-10 h-6 bg-white/10 rounded-full peer-checked:bg-orange-500/70 transition-colors"></div>
+                                        <div class="absolute top-1 left-1 w-4 h-4 bg-white/60 rounded-full peer-checked:translate-x-4 peer-checked:bg-white transition-all"></div>
+                                    </div>
+                                    <span class="text-white/80 text-sm font-semibold leading-tight">
+                                        强制添加模式
+                                        <span class="block text-white/40 font-normal text-xs mt-0.5">拉流失败也强制写入 ZLMediaKit（force=1）</span>
+                                    </span>
+                                </label>
+                            </div>` : ''}
                         </div>
                     </div>
                 </div>
@@ -773,6 +789,7 @@ async function submitAddPullProxy(closeModal) {
     const rtpType     = document.getElementById('rtpType').value;
     const schema      = document.getElementById('pullSchema').value;
     const onDemand    = document.getElementById('onDemand').value;  // "0" or "1"
+    const forceAdd    = document.getElementById('forceAdd')?.checked ? 1 : 0;
     if (retryCount !== '') customParams['retry_count'] = retryCount;
     if (timeoutSec !== '') customParams['timeout_sec'] = timeoutSec;
     if (rtpType    !== '') customParams['rtp_type']    = rtpType;
@@ -787,6 +804,7 @@ async function submitAddPullProxy(closeModal) {
         stream,
         remark,
         on_demand: onDemand,
+        force: forceAdd,          // 强制添加模式：1=force，0=不强制（仅传给 ZLM，不存数据库）
         protocol_params: JSON.stringify(protocolParams),
         custom_params:   JSON.stringify(customParams),
     };
