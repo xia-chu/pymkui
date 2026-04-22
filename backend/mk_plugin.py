@@ -6,6 +6,7 @@ import subprocess
 import mk_logger
 import mk_loader
 import asyncio
+import py_plugin
 
 from shared_loop import SharedLoop
 from py_http_api import app, db
@@ -97,6 +98,8 @@ def _resolve_ffmpeg_bin(configured: str) -> str:
 
 
 def on_start():
+    py_plugin.load_plugins()
+    
     mk_logger.log_info(f"on_start, secret: {mk_loader.get_config('api.secret')}")
     # 设置http.rootPath为当前py文件的../frontend目录
     current_dir = os.path.dirname(os.path.abspath(__file__))
