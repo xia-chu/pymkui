@@ -98,8 +98,15 @@ def _resolve_ffmpeg_bin(configured: str) -> str:
 
 
 def on_start():
-    py_plugin.load_plugins()
-    
+    # 加载插件并同步数据库绑定
+    py_plugin.registry.load()
+    # 从 py_http_api 导入同步函数
+    try:
+        from py_http_api import _sync_bindings_from_db
+        _sync_bindings_from_db()
+    except Exception as e:
+        mk_logger.log_warn(f"[on_start] 同步插件绑定失败: {e}")
+
     mk_logger.log_info(f"on_start, secret: {mk_loader.get_config('api.secret')}")
     # 设置http.rootPath为当前py文件的../frontend目录
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -356,93 +363,76 @@ def on_player_proxy_failed(url: str, media_tuple: mk_loader.MediaTuple, ex: mk_l
 
     return False
 
-# def on_exit():
-#     mk_logger.log_info("on_exit")
 
-# def on_publish(type: str, args: dict, invoker, sender: dict) -> bool:
-#     mk_logger.log_info(f"type: {type}, args: {args}, sender: {sender}")
-#     # opt 控制转协议，请参考配置文件[protocol]下字段
-#     opt = {
-#         #"enable_rtmp": "1"
-#     }
-#     # 响应推流鉴权结果
-#     mk_loader.publish_auth_invoker_do(invoker, "", opt)
-#     # 返回True代表此事件被python拦截
-#     return True
+# ══════════════════════════════════════════════════════════════════════
+# 插件系统事件派发
+# 以下事件函数将优先尝试派发给已绑定的插件，插件返回 True 则接管，
+# 否则执行原有内置逻辑（若有），最后返回 False 交还 ZLM 处理。
+# ══════════════════════════════════════════════════════════════════════
 
-# def on_play(args: dict, invoker, sender: dict) -> bool:
-#     mk_logger.log_info(f"args: {args}, sender: {sender}")
-#     # 响应播放鉴权结果
-#     mk_loader.play_auth_invoker_do(invoker, "")
-#     # 返回True代表此事件被python拦截
-#     return True
+def on_publish(type: str, args: dict, invoker, sender: dict) -> bool:
+    mk_logger.log_info(f"on_publish, type: {type}, args: {args}, sender: {sender}")
+    return py_plugin.registry.dispatch("on_publish", type=type, args=args, invoker=invoker, sender=sender)
 
-# def on_flow_report(args: dict, totalBytes: int, totalDuration: int, isPlayer: bool, sender: dict) -> bool:
-#     mk_logger.log_info(f"args: {args}, totalBytes: {totalBytes}, totalDuration: {totalDuration}, isPlayer: {isPlayer}, sender: {sender}")
-#     # 返回True代表此事件被python拦截
-#     return False
+def on_play(args: dict, invoker, sender: dict) -> bool:
+    mk_logger.log_info(f"on_play, args: {args}, sender: {sender}")
+    return py_plugin.registry.dispatch("on_play", args=args, invoker=invoker, sender=sender)
 
-# def on_media_changed(is_register: bool, sender: mk_loader.MediaSource) -> bool:
-#     mk_logger.log_info(f"is_register: {is_register}, sender: {sender.getUrl()}")
-#     # 该事件在c++中也处理下
-#     return False
+def on_flow_report(args: dict, totalBytes: int, totalDuration: int, isPlayer: bool, sender: dict) -> bool:
+    mk_logger.log_info(f"on_flow_report, args: {args}, totalBytes: {totalBytes}, totalDuration: {totalDuration}, isPlayer: {isPlayer}, sender: {sender}")
+    return py_plugin.registry.dispatch(
+        "on_flow_report",
+        args=args, totalBytes=totalBytes, totalDuration=totalDuration,
+        isPlayer=isPlayer, sender=sender,
+    )
 
+def on_media_changed(is_register: bool, sender: mk_loader.MediaSource) -> bool:
+    mk_logger.log_info(f"on_media_changed, is_register: {is_register}, sender: {sender}")
+    return py_plugin.registry.dispatch(
+        "on_media_changed", is_register=is_register, sender=sender
+    )
 
-# def on_record_mp4(info: dict) -> bool:
-#     mk_logger.log_info(f"on_record_mp4, info: {info}")
-#     # 返回True代表此事件被python拦截
-#     return True
-# def on_record_ts(info: dict) -> bool:
-#     mk_logger.log_info(f"on_record_ts, info: {info}")
-#     # 返回True代表此事件被python拦截
-#     return True
+def on_record_mp4(info: dict) -> bool:
+    mk_logger.log_info(f"on_record_mp4: {info.get('file_path')}")
+    return py_plugin.registry.dispatch("on_record_mp4", info=info)
 
-# def on_stream_none_reader(sender: mk_loader.MediaSource) -> bool:
-#     mk_logger.log_info(f"on_stream_none_reader: {sender.getUrl()}")
-#     # 无人观看自动关闭
-#     # sender.close(False)
-#     # 返回True代表此事件被python拦截
-#     return True
+def on_record_ts(info: dict) -> bool:
+    mk_logger.log_info(f"on_record_ts: {info.get('file_path')}")
+    return py_plugin.registry.dispatch("on_record_ts", info=info)
 
-# def on_send_rtp_stopped(sender: mk_loader.MultiMediaSourceMuxer, ssrc: str, ex: mk_loader.SockException) -> bool:
-#     mk_logger.log_info(f"on_send_rtp_stopped, ssrc: {ssrc}, ex: {ex.what()}, url: {sender.getMediaTuple().getUrl()}")
-#     # 返回True代表此事件被python拦截
-#     return True
+def on_stream_none_reader(sender: mk_loader.MediaSource) -> bool:
+    mk_logger.log_info(f"on_stream_none_reader: {sender.getUrl()}")
+    return py_plugin.registry.dispatch("on_stream_none_reader", sender=sender)
 
-# def on_rtp_server_timeout(local_port: int, tuple: mk_loader.MediaTuple, tcp_mode: int, re_use_port: bool, ssrc: int) -> bool:
-#     mk_logger.log_info(f"on_rtp_server_timeout, local_port: {local_port}, tuple: {tuple.shortUrl()}, tcp_mode: {tcp_mode}, re_use_port: {re_use_port}, ssrc: {ssrc}")
-#     # 返回True代表此事件被python拦截
-#     return False
+def on_send_rtp_stopped(sender: mk_loader.MultiMediaSourceMuxer, ssrc: str, ex: mk_loader.SockException) -> bool:
+    mk_logger.log_info(f"on_send_rtp_stopped: ssrc={ssrc}, ex={ex.what()}")
+    return py_plugin.registry.dispatch(
+        "on_send_rtp_stopped", sender=sender, ssrc=ssrc, ex=ex
+    )
 
-# def on_reload_config():
-#     mk_logger.log_info(f"on_reload_config")
+def on_rtp_server_timeout(local_port: int, tuple: mk_loader.MediaTuple, tcp_mode: int, re_use_port: bool, ssrc: int) -> bool:
+    mk_logger.log_info(f"on_rtp_server_timeout: port={local_port}, ssrc={ssrc}")
+    return py_plugin.registry.dispatch(
+        "on_rtp_server_timeout",
+        local_port=local_port, tuple=tuple, tcp_mode=tcp_mode,
+        re_use_port=re_use_port, ssrc=ssrc,
+    )
 
-# class PyMultiMediaSourceMuxer:
-#     def __init__(self, sender: mk_loader.MultiMediaSourceMuxer):
-#         mk_logger.log_info(f"PyMultiMediaSourceMuxer: {sender.getMediaTuple().shortUrl()}")
-#     def destroy(self):
-#         mk_logger.log_info(f"~PyMultiMediaSourceMuxer")
+def on_reload_config():
+    mk_logger.log_info("on_reload_config")
+    py_plugin.registry.dispatch("on_reload_config")
 
-#     def addTrack(self, track: mk_loader.Track):
-#         mk_logger.log_info(f"addTrack: {track.getCodecName()}")
-#         return True
-#     def addTrackCompleted(self):
-#         mk_logger.log_info(f"addTrackCompleted")
-#     def inputFrame(self, frame: mk_loader.Frame):
-#         # mk_logger.log_info(f"inputFrame: {frame.getCodecName()} {frame.dts()}")
-#         return True
-# def on_create_muxer(sender: mk_loader.MultiMediaSourceMuxer):
-#     return PyMultiMediaSourceMuxer(sender)
+def on_get_rtsp_realm(args: dict, invoker, sender: dict) -> bool:
+    mk_logger.log_info(f"on_get_rtsp_realm, args: {args}, invoker: {invoker}, sender: {sender}")
+    return py_plugin.registry.dispatch("on_get_rtsp_realm", args=args, invoker=invoker, sender=sender)
 
+def on_rtsp_auth(args: dict, realm: str, user_name: str, must_no_encrypt: bool, invoker, sender: dict) -> bool:
+    mk_logger.log_info(f"on_rtsp_auth, args: {args}, realm: {realm}, user_name: {user_name}, must_no_encrypt: {must_no_encrypt}, sender: {sender}")
+    return py_plugin.registry.dispatch(
+        "on_rtsp_auth",
+        args=args, realm=realm, user_name=user_name,
+        must_no_encrypt=must_no_encrypt, invoker=invoker, sender=sender,
+    )
 
-# def on_get_rtsp_realm(args: dict, invoker, sender: dict) -> bool:
-#     mk_logger.log_info(f"on_get_rtsp_realm, args: {args}, sender: {sender}")
-#     mk_loader.rtsp_get_realm_invoker_do(invoker, "zlmediakit")
-#     # 返回True代表此事件被python拦截
-#     return True
-
-# def on_rtsp_auth(args: dict, realm: str, user_name: str, must_no_encrypt: bool, invoker, sender:dict) -> bool:
-#     mk_logger.log_info(f"on_rtsp_auth, args: {args}, realm: {realm}, user_name: {user_name}, must_no_encrypt: {must_no_encrypt}, sender: {sender}")
-#     mk_loader.rtsp_auth_invoker_do(invoker, False, "zlmediakit")
-#     # 返回True代表此事件被python拦截
-#     return True
+def on_exit():
+    mk_logger.log_info("on_exit")

@@ -128,6 +128,12 @@ function closeTab(pageName, event) {
         if (protocolOptionsModalContainer) {
             protocolOptionsModalContainer.innerHTML = '';
         }
+    } else if (pageName === 'plugins') {
+        // 清理提升到 body 的插件弹窗
+        ['bindingModal', 'paramsModal'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.remove();
+        });
     } else if (pageName === 'whip' && typeof whipState !== 'undefined' && whipState.isStreaming) {
         console.log('关闭whip标签页，停止推流...');
         stopWhipStream();
@@ -200,6 +206,9 @@ function loadPageData(pageName) {
             break;
         case 'protocol-options':
             loadProtocolOptionsPage();
+            break;
+        case 'plugins':
+            loadPluginsPage();
             break;
         default:
             break;
@@ -816,4 +825,34 @@ function showToast(message, type = 'info') {
     setTimeout(() => {
         toast.classList.add('translate-x-full', 'opacity-0');
     }, 3000);
+}
+
+async function loadPluginsPage() {
+    const content = document.getElementById('plugins-content');
+    if (!content) return;
+
+    content.innerHTML = `
+        <div class="flex justify-center items-center h-64">
+            <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mx-auto"></div>
+        </div>`;
+
+    try {
+        const response = await fetch('pages/plugins.html');
+        if (response.ok) {
+            const html = await response.text();
+            content.innerHTML = html;
+            // 把所有插件弹窗提升到 body，避免父容器 pointer-events-none / overflow 干扰
+            ['bindingModal', 'paramsModal'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) document.body.appendChild(el);
+            });
+            setTimeout(() => {
+                if (typeof initPluginsPage === 'function') initPluginsPage();
+            }, 100);
+        } else {
+            content.innerHTML = `<div class="text-center p-10 text-white/60">加载插件管理页面失败</div>`;
+        }
+    } catch (e) {
+        content.innerHTML = `<div class="text-center p-10 text-white/60">网络错误: ${e.message}</div>`;
+    }
 }

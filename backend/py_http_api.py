@@ -959,3 +959,248 @@ async def toggle_stream_proxy_mode(request: Request):
     except Exception as e:
         mk_logger.log_warn(f"toggle_stream_proxy_mode | 切换拉流代理模式失败: {e}")
         return {"code": -1, "msg": f"切换失败: {str(e)}"}
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 插件管理接口
+# ══════════════════════════════════════════════════════════════════════
+import py_plugin as _py_plugin
+
+
+@app.get(
+    "/index/pyapi/plugin/list",
+    tags=["插件管理"],
+    summary="获取已加载的插件列表",
+)
+async def plugin_list():
+    """返回当前内存中所有已加载插件的基本信息"""
+    try:
+        plugins = _py_plugin.registry.get_all()
+        return {"code": 0, "data": plugins}
+    except Exception as e:
+        mk_logger.log_warn(f"plugin_list error: {e}")
+        return {"code": -1, "msg": str(e)}
+
+
+@app.post(
+    "/index/pyapi/plugin/reload",
+    tags=["插件管理"],
+    summary="热加载插件目录",
+)
+async def plugin_reload():
+    """
+    重新扫描 plugins/ 目录，热加载所有插件模块。
+    加载完成后自动将数据库中已有绑定重新同步到注册中心。
+    """
+    try:
+        loaded = _py_plugin.registry.load()
+        # 重载完毕后，把数据库绑定重新同步到 registry
+        _sync_bindings_from_db()
+        return {
+            "code": 0,
+            "msg": f"热加载完成，共加载 {len(loaded)} 个插件",
+            "data": list(loaded.keys()),
+        }
+    except Exception as e:
+        mk_logger.log_warn(f"plugin_reload error: {e}")
+        return {"code": -1, "msg": str(e)}
+
+
+@app.get(
+    "/index/pyapi/plugin/events",
+    tags=["插件管理"],
+    summary="获取所有支持的事件类型",
+)
+async def plugin_events():
+    """返回系统支持绑定插件的所有 ZLM 事件类型"""
+    return {"code": 0, "data": _py_plugin.SUPPORTED_EVENTS}
+
+
+@app.get(
+    "/index/pyapi/plugin/bindings",
+    tags=["插件管理"],
+    summary="获取所有事件绑定配置",
+)
+async def plugin_get_bindings():
+    """
+    返回所有支持事件的绑定配置。
+    格式：[{event_type, bindings:[{id, plugin_name, params, priority, enabled}], updated_at}, ...]
+    """
+    try:
+        db_rows = db.get_all_plugin_bindings()
+        # 构造 event_type → bindings 映射
+        db_map = {r["event_type"]: r for r in db_rows}
+        result = []
+        for evt in _py_plugin.SUPPORTED_EVENTS:
+            rec = db_map.get(evt)
+            if rec:
+                result.append(rec)
+            else:
+                result.append({
+                    "event_type": evt,
+                    "bindings": [],
+                })
+        return {"code": 0, "data": result}
+    except Exception as e:
+        mk_logger.log_warn(f"plugin_get_bindings error: {e}")
+        return {"code": -1, "msg": str(e)}
+
+
+@app.post(
+    "/index/pyapi/plugin/bindings/save",
+    tags=["插件管理"],
+    summary="保存事件绑定配置（全量替换）",
+)
+async def plugin_save_binding(request: Request):
+    """
+    全量保存某个事件类型的插件绑定配置，并立即生效到内存。
+
+    请求体（JSON）：
+    - event_type: str  — 事件类型，必须是 SUPPORTED_EVENTS 之一
+    - bindings: list   — 绑定列表（有序），每项格式：
+        {"plugin_name": str, "params": dict, "enabled": 0/1}
+    - enabled: int (0/1) — 整组启用状态，默认 1
+    """
+    try:
+        body = await request.body()
+        data = json.loads(body.decode("utf-8"))
+
+        event_type = data.get("event_type", "").strip()
+        bindings   = data.get("bindings", [])
+        enabled    = int(data.get("enabled", 1))
+
+        if event_type not in _py_plugin.SUPPORTED_EVENTS:
+            return {"code": -1, "msg": f"不支持的事件类型: {event_type}"}
+        if not isinstance(bindings, list):
+            return {"code": -1, "msg": "bindings 必须是数组"}
+
+        # 写库（全量替换）
+        ok = db.save_plugin_bindings_for_event(event_type, bindings, enabled)
+        if not ok:
+            return {"code": -1, "msg": "数据库写入失败"}
+
+        # 立即同步到内存 registry
+        if enabled:
+            registry_bindings = [
+                {"name": b.get("plugin_name") or b.get("name", ""),
+                 "params": b.get("params") or {}}
+                for b in bindings
+            ]
+            _py_plugin.registry.set_bindings(event_type, registry_bindings)
+        else:
+            _py_plugin.registry.set_bindings(event_type, [])
+
+        return {"code": 0, "msg": "保存成功"}
+    except Exception as e:
+        mk_logger.log_warn(f"plugin_save_binding error: {e}")
+        return {"code": -1, "msg": str(e)}
+
+
+@app.post(
+    "/index/pyapi/plugin/bindings/update_params",
+    tags=["插件管理"],
+    summary="更新单个绑定的参数",
+)
+async def plugin_update_binding_params(request: Request):
+    """
+    更新某个事件-插件绑定的自定义参数，不影响其他绑定。
+
+    请求体（JSON）：
+    - event_type: str
+    - plugin_name: str
+    - params: dict       — 自定义参数键值对
+    - enabled: int (0/1) — 可选，默认不改变
+    """
+    try:
+        body = await request.body()
+        data = json.loads(body.decode("utf-8"))
+
+        event_type  = data.get("event_type", "").strip()
+        plugin_name = data.get("plugin_name", "").strip()
+        params      = data.get("params", {})
+
+        if not event_type or not plugin_name:
+            return {"code": -1, "msg": "event_type 和 plugin_name 不能为空"}
+
+        # 读出当前绑定，找到该项更新参数
+        current = db.get_plugin_bindings_for_event(event_type)
+        item = next((x for x in current if x["plugin_name"] == plugin_name), None)
+        if item is None:
+            return {"code": -1, "msg": f"绑定不存在: {event_type}/{plugin_name}"}
+
+        enabled  = data.get("enabled", item["enabled"])
+        priority = item["priority"]
+
+        ok = db.upsert_plugin_binding_item(event_type, plugin_name, params, priority, enabled)
+        if not ok:
+            return {"code": -1, "msg": "数据库更新失败"}
+
+        # 同步内存
+        _sync_bindings_from_db_for_event(event_type)
+        return {"code": 0, "msg": "参数更新成功"}
+    except Exception as e:
+        mk_logger.log_warn(f"plugin_update_binding_params error: {e}")
+        return {"code": -1, "msg": str(e)}
+
+
+@app.post(
+    "/index/pyapi/plugin/bindings/delete",
+    tags=["插件管理"],
+    summary="删除事件绑定配置",
+)
+async def plugin_delete_binding(request: Request):
+    """
+    删除某个事件类型的全部绑定配置（或单条），并从内存中清除。
+
+    请求体（JSON）：
+    - event_type: str   — 必填
+    - plugin_name: str  — 可选；若提供则只删该插件的绑定，否则删整个事件的绑定
+    """
+    try:
+        body = await request.body()
+        data = json.loads(body.decode("utf-8"))
+        event_type  = data.get("event_type", "").strip()
+        plugin_name = data.get("plugin_name", "").strip()
+        if not event_type:
+            return {"code": -1, "msg": "event_type 不能为空"}
+        if plugin_name:
+            db.delete_plugin_binding_item(event_type, plugin_name)
+            _sync_bindings_from_db_for_event(event_type)
+        else:
+            db.delete_plugin_bindings_for_event(event_type)
+            _py_plugin.registry.set_bindings(event_type, [])
+        return {"code": 0, "msg": "删除成功"}
+    except Exception as e:
+        mk_logger.log_warn(f"plugin_delete_binding error: {e}")
+        return {"code": -1, "msg": str(e)}
+
+
+def _sync_bindings_from_db():
+    """启动时 / 热加载后，把数据库中所有启用的绑定同步到内存 registry"""
+    try:
+        rows = db.get_all_plugin_bindings()
+        for row in rows:
+            event_type = row["event_type"]
+            bindings = row.get("bindings", [])
+            # 过滤出 enabled=1 的绑定项
+            active = [
+                {"name": b["plugin_name"], "params": b.get("params") or {}}
+                for b in bindings if b.get("enabled", 1)
+            ]
+            _py_plugin.registry.set_bindings(event_type, active)
+        mk_logger.log_info(f"[plugin] 同步绑定完成，共 {len(rows)} 条事件")
+    except Exception as e:
+        mk_logger.log_warn(f"[plugin] 同步绑定失败: {e}")
+
+
+def _sync_bindings_from_db_for_event(event_type: str):
+    """更新单个事件类型的内存绑定"""
+    try:
+        bindings = db.get_plugin_bindings_for_event(event_type)
+        active = [
+            {"name": b["plugin_name"], "params": b.get("params") or {}}
+            for b in bindings if b.get("enabled", 1)
+        ]
+        _py_plugin.registry.set_bindings(event_type, active)
+    except Exception as e:
+        mk_logger.log_warn(f"[plugin] 同步单事件绑定失败 {event_type}: {e}")

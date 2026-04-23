@@ -113,7 +113,22 @@ class Database:
                 updated_at TIMESTAMP DEFAULT current_timestamp
             )
         ''')
-        
+
+        # 插件事件绑定表：每条记录 = 一个事件类型 + 一个插件的绑定，含参数和优先级
+        # priority 越小越先执行；params 为 JSON 对象，存储该绑定的自定义参数
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS plugin_bindings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type TEXT NOT NULL,
+                plugin_name TEXT NOT NULL,
+                params TEXT NOT NULL DEFAULT '{}',
+                priority INTEGER NOT NULL DEFAULT 0,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                updated_at TIMESTAMP DEFAULT current_timestamp,
+                UNIQUE(event_type, plugin_name)
+            )
+        ''')
+
         self.connection.commit()
         mk_logger.log_info(f"Database initialized at {self.db_path}")
     
@@ -496,3 +511,158 @@ class Database:
         for proxy in proxies:
             proxy['urls'] = self.get_proxy_urls(proxy['id'])
         return proxies
+
+    # ══════════════════════════════════════════════════════════════
+    # 插件事件绑定 CRUD
+    # ══════════════════════════════════════════════════════════════
+
+    def get_all_plugin_bindings(self) -> List[Dict[str, Any]]:
+        """
+        获取所有事件绑定记录（新表 plugin_bindings）。
+        返回格式：
+        [
+          {
+            "event_type": "on_publish",
+            "bindings": [
+              {"id": 1, "plugin_name": "my_plugin", "params": {...}, "priority": 0, "enabled": 1},
+              ...
+            ]
+          },
+          ...
+        ]
+        按 event_type 分组，每组内按 priority ASC 排序。
+        """
+        try:
+            self.cursor.execute(
+                'SELECT * FROM plugin_bindings ORDER BY event_type, priority ASC, id ASC'
+            )
+            rows = self.cursor.fetchall()
+            from collections import OrderedDict
+            groups: OrderedDict = OrderedDict()
+            for row in rows:
+                d = dict(row)
+                try:
+                    d['params'] = json.loads(d.get('params') or '{}')
+                except Exception:
+                    d['params'] = {}
+                et = d['event_type']
+                if et not in groups:
+                    groups[et] = []
+                groups[et].append(d)
+            return [{"event_type": et, "bindings": binds} for et, binds in groups.items()]
+        except sqlite3.Error as e:
+            mk_logger.log_warn(f"get_all_plugin_bindings error: {e}")
+            return []
+
+    def get_plugin_bindings_for_event(self, event_type: str) -> List[Dict[str, Any]]:
+        """
+        获取某个事件类型的所有绑定（新表），按 priority ASC 排序。
+        返回 [{"id":..., "plugin_name":..., "params":{...}, "priority":..., "enabled":...}, ...]
+        """
+        try:
+            self.cursor.execute(
+                'SELECT * FROM plugin_bindings WHERE event_type=? ORDER BY priority ASC, id ASC',
+                (event_type,)
+            )
+            result = []
+            for row in self.cursor.fetchall():
+                d = dict(row)
+                try:
+                    d['params'] = json.loads(d.get('params') or '{}')
+                except Exception:
+                    d['params'] = {}
+                result.append(d)
+            return result
+        except sqlite3.Error as e:
+            mk_logger.log_warn(f"get_plugin_bindings_for_event error: {e}")
+            return []
+
+    def upsert_plugin_binding_item(
+        self, event_type: str, plugin_name: str,
+        params: Optional[dict] = None, priority: int = 0, enabled: int = 1
+    ) -> bool:
+        """
+        插入或更新单条绑定（event_type + plugin_name 唯一）。
+        params 为字典，存储该绑定的自定义参数。
+        """
+        try:
+            params_json = json.dumps(params or {}, ensure_ascii=False)
+            self.cursor.execute(
+                '''
+                INSERT INTO plugin_bindings (event_type, plugin_name, params, priority, enabled, updated_at)
+                VALUES (?, ?, ?, ?, ?, current_timestamp)
+                ON CONFLICT(event_type, plugin_name) DO UPDATE SET
+                    params     = excluded.params,
+                    priority   = excluded.priority,
+                    enabled    = excluded.enabled,
+                    updated_at = current_timestamp
+                ''',
+                (event_type, plugin_name, params_json, priority, enabled),
+            )
+            self.connection.commit()
+            return True
+        except sqlite3.Error as e:
+            mk_logger.log_warn(f"upsert_plugin_binding_item error: {e}")
+            self.connection.rollback()
+            return False
+
+    def delete_plugin_binding_item(self, event_type: str, plugin_name: str) -> bool:
+        """删除单条事件-插件绑定"""
+        try:
+            self.cursor.execute(
+                'DELETE FROM plugin_bindings WHERE event_type=? AND plugin_name=?',
+                (event_type, plugin_name)
+            )
+            self.connection.commit()
+            return True
+        except sqlite3.Error as e:
+            mk_logger.log_warn(f"delete_plugin_binding_item error: {e}")
+            return False
+
+    def delete_plugin_bindings_for_event(self, event_type: str) -> bool:
+        """删除某个事件类型下的所有绑定"""
+        try:
+            self.cursor.execute(
+                'DELETE FROM plugin_bindings WHERE event_type=?',
+                (event_type,)
+            )
+            self.connection.commit()
+            return True
+        except sqlite3.Error as e:
+            mk_logger.log_warn(f"delete_plugin_bindings_for_event error: {e}")
+            return False
+
+    def save_plugin_bindings_for_event(
+        self, event_type: str,
+        bindings: List[Dict[str, Any]],
+        enabled: int = 1
+    ) -> bool:
+        """
+        全量保存某个事件类型的绑定列表（先删后插）。
+        bindings 格式：[{"plugin_name": ..., "params": {...}}, ...]
+        列表顺序即为执行优先级（index=priority）。
+        enabled 控制整组绑定的启用状态。
+        """
+        try:
+            self.cursor.execute(
+                'DELETE FROM plugin_bindings WHERE event_type=?', (event_type,)
+            )
+            for idx, item in enumerate(bindings):
+                plugin_name = item.get('plugin_name') or item.get('name', '')
+                params = item.get('params') or {}
+                params_json = json.dumps(params, ensure_ascii=False)
+                self.cursor.execute(
+                    '''
+                    INSERT INTO plugin_bindings (event_type, plugin_name, params, priority, enabled, updated_at)
+                    VALUES (?, ?, ?, ?, ?, current_timestamp)
+                    ''',
+                    (event_type, plugin_name, params_json, idx, enabled),
+                )
+            self.connection.commit()
+            return True
+        except sqlite3.Error as e:
+            mk_logger.log_warn(f"save_plugin_bindings_for_event error: {e}")
+            self.connection.rollback()
+            return False
+
+

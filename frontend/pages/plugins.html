@@ -1,0 +1,175 @@
+<div class="space-y-6">
+    <!-- 标题栏 -->
+    <div class="flex justify-between items-center">
+        <div class="flex items-center gap-3">
+            <div class="bg-white/20 w-10 h-10 rounded-full flex items-center justify-center">
+                <i class="fa fa-puzzle-piece text-white text-xl"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">插件管理</h2>
+        </div>
+        <div class="flex items-center gap-3">
+            <button id="reloadPluginsBtn"
+                class="bg-white/10 text-white px-5 py-3 rounded-lg font-semibold hover:bg-white/20 transition-all duration-300 hover:-translate-y-1">
+                <i class="fa fa-refresh mr-2"></i>热加载插件
+            </button>
+        </div>
+    </div>
+
+    <!-- 已加载插件列表 -->
+    <div class="bg-white/5 rounded-xl p-6 shadow-lg border border-white/10">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-white font-bold text-lg flex items-center gap-2">
+                <i class="fa fa-cubes text-primary"></i>
+                已加载插件
+            </h3>
+            <span id="pluginCount" class="text-white/50 text-sm">共 0 个</span>
+        </div>
+        <div id="pluginList" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            <div class="col-span-full flex items-center justify-center py-10 text-white/40">
+                <i class="fa fa-spinner fa-spin mr-2"></i>加载中...
+            </div>
+        </div>
+    </div>
+
+    <!-- 事件绑定管理 -->
+    <div class="bg-white/5 rounded-xl p-6 shadow-lg border border-white/10">
+        <div class="flex items-center justify-between mb-6">
+            <h3 class="text-white font-bold text-lg flex items-center gap-2">
+                <i class="fa fa-bolt text-yellow-400"></i>
+                事件绑定配置
+            </h3>
+            <span class="text-white/40 text-sm">为每个事件配置插件处理器及运行参数</span>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead>
+                    <tr class="border-b border-white/10">
+                        <th class="text-left py-3 px-4 text-white/70 font-semibold w-52">事件类型</th>
+                        <th class="text-left py-3 px-4 text-white/70 font-semibold">绑定插件</th>
+                        <th class="text-left py-3 px-4 text-white/70 font-semibold w-28">操作</th>
+                    </tr>
+                </thead>
+                <tbody id="eventBindingsTable">
+                    <tr>
+                        <td colspan="3" class="p-10 text-center text-white/40">
+                            <i class="fa fa-spinner fa-spin mr-2"></i>加载中...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- ══ 编辑绑定弹窗 ══════════════════════════════════════════════════ -->
+<div id="bindingModal" class="fixed inset-0 z-50 hidden flex items-center justify-center">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeBindingModal()"></div>
+    <div class="relative bg-slate-800 border border-white/20 rounded-2xl shadow-2xl w-full max-w-2xl mx-4 p-6 max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between mb-5">
+            <h3 class="text-white font-bold text-lg">
+                <i class="fa fa-plug mr-2 text-primary"></i>
+                编辑事件绑定
+            </h3>
+            <button onclick="closeBindingModal()" class="text-white/50 hover:text-white transition-colors">
+                <i class="fa fa-times text-xl"></i>
+            </button>
+        </div>
+
+        <!-- 事件类型标签 -->
+        <div class="mb-4">
+            <label class="text-white/60 text-xs font-semibold uppercase tracking-wider block mb-1">事件类型</label>
+            <div id="modalEventType"
+                class="bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white/80 font-mono text-sm inline-block">
+            </div>
+        </div>
+
+        <!-- 插件选择区 -->
+        <div class="mb-5">
+            <label class="text-white/60 text-xs font-semibold uppercase tracking-wider block mb-2">
+                绑定插件
+                <span class="text-white/30 font-normal normal-case ml-1">（仅显示类型匹配的插件，拖拽可排序；点击⚙配置参数）</span>
+            </label>
+            <div class="mb-2">
+                <div class="text-white/40 text-xs mb-1 px-1">▸ 已绑定（拖拽排序）</div>
+                <div id="selectedPlugins"
+                    class="min-h-12 bg-white/5 border border-white/10 rounded-lg p-2 space-y-1"
+                    ondragover="event.preventDefault()"
+                    ondrop="dropPlugin(event, 'selected')">
+                </div>
+            </div>
+            <div>
+                <div class="text-white/40 text-xs mb-1 px-1">▸ 未绑定（拖入上方启用）</div>
+                <div id="availablePlugins"
+                    class="min-h-10 bg-white/5 border border-dashed border-white/20 rounded-lg p-2 space-y-1"
+                    ondragover="event.preventDefault()"
+                    ondrop="dropPlugin(event, 'available')">
+                </div>
+            </div>
+        </div>
+
+        <!-- 启用开关 -->
+        <div class="flex items-center gap-3 mb-6">
+            <label class="text-white/70 text-sm font-semibold">启用此事件绑定</label>
+            <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="bindingEnabled" class="sr-only peer" checked>
+                <div class="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer
+                    peer-checked:after:translate-x-full peer-checked:bg-primary
+                    after:content-[''] after:absolute after:top-[2px] after:left-[2px]
+                    after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all">
+                </div>
+            </label>
+        </div>
+
+        <div class="flex justify-end gap-3">
+            <button onclick="closeBindingModal()"
+                class="px-5 py-2 rounded-lg bg-white/10 text-white font-semibold hover:bg-white/20 transition-colors">
+                取消
+            </button>
+            <button onclick="saveBinding()"
+                class="px-5 py-2 rounded-lg bg-gradient-primary text-white font-semibold hover:shadow-neon transition-all">
+                <i class="fa fa-save mr-1"></i>保存
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ══ 编辑参数弹窗 ══════════════════════════════════════════════════ -->
+<div id="paramsModal" class="fixed inset-0 z-[60] hidden flex items-center justify-center">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" onclick="closeParamsModal()"></div>
+    <div class="relative bg-slate-800 border border-white/20 rounded-2xl shadow-2xl w-full max-w-2xl mx-4 p-6 max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between mb-5">
+            <h3 class="text-white font-bold text-lg">
+                <i class="fa fa-sliders mr-2 text-yellow-400"></i>
+                插件绑定参数
+            </h3>
+            <button onclick="closeParamsModal()" class="text-white/50 hover:text-white transition-colors">
+                <i class="fa fa-times text-xl"></i>
+            </button>
+        </div>
+
+        <div class="mb-3 flex items-center gap-2 flex-wrap">
+            <span class="text-white/50 text-xs">插件：</span>
+            <span id="paramsPluginName" class="font-mono text-sm text-primary font-bold"></span>
+            <span class="text-white/30 text-xs mx-1">@</span>
+            <span id="paramsEventType" class="font-mono text-xs text-white/50"></span>
+        </div>
+
+        <p class="text-white/40 text-xs mb-3">
+            以下为插件声明的可配置参数，修改后点击保存。参数将作为 <code class="text-primary">binding_params</code> 传入插件 <code class="text-primary">run()</code> 方法。
+        </p>
+
+        <!-- 参数列表 -->
+        <div id="paramsList" class="space-y-2 mb-5 max-h-72 overflow-y-auto pr-1"></div>
+
+        <div class="flex justify-end gap-3">
+            <button onclick="closeParamsModal()"
+                class="px-5 py-2 rounded-lg bg-white/10 text-white font-semibold hover:bg-white/20 transition-colors">
+                取消
+            </button>
+            <button onclick="saveParams()"
+                class="px-5 py-2 rounded-lg bg-gradient-primary text-white font-semibold hover:shadow-neon transition-all">
+                <i class="fa fa-save mr-1"></i>保存参数
+            </button>
+        </div>
+    </div>
+</div>
