@@ -77,12 +77,21 @@ function restoreWhipState() {
 function initWhipStreaming() {
     console.log('Whip streaming initialized');
     
-    const updateWhipUrl = () => {
+    const updateWhipUrl = async () => {
         const appName = document.getElementById('appName').value || 'live';
         const streamName = document.getElementById('streamName').value || 'test';
         const baseUrl = Api.getBaseUrl();
         const apiPath = '/index/api/whip';
-        whipState.whipUrl = `${baseUrl}${apiPath}?app=${encodeURIComponent(appName)}&stream=${encodeURIComponent(streamName)}`;
+        let url = `${baseUrl}${apiPath}?app=${encodeURIComponent(appName)}&stream=${encodeURIComponent(streamName)}`;
+        try {
+            const result = await Api.getPluginUrlParams('on_publish', appName, streamName);
+            if (result.code === 0 && result.data && Object.keys(result.data).length > 0) {
+                url += '&' + new URLSearchParams(result.data).toString();
+            }
+        } catch (e) {
+            console.warn('获取推流URL附加参数失败，使用默认地址:', e);
+        }
+        whipState.whipUrl = url;
         document.getElementById('whipUrl').value = whipState.whipUrl;
         console.log('更新推流地址:', whipState.whipUrl);
     };
