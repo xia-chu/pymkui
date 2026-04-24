@@ -18,7 +18,6 @@ const pageNames = {
     'dashboard': '状态概览',
     'streams': '视频管理',
     'pull-proxy': '拉流代理',
-    'push-proxy': '推流代理',
     'settings': '服务配置',
     'whip': '在线推流',
     'network': '连接管理',
@@ -29,7 +28,6 @@ const pageIcons = {
     'dashboard': 'fa-dashboard',
     'streams': 'fa-video-camera',
     'pull-proxy': 'fa-cloud-download',
-    'push-proxy': 'fa-upload',
     'settings': 'fa-cog',
     'whip': 'fa-podcast',
     'network': 'fa-link',
@@ -186,9 +184,6 @@ function loadPageData(pageName) {
             break;
         case 'pull-proxy':
             loadPullProxyPage();
-            break;
-        case 'push-proxy':
-            loadPushProxyPage();
             break;
         case 'settings':
             loadSettingsPage();
@@ -388,45 +383,6 @@ async function loadPullProxyPage() {
         }
     } catch (error) {
         console.error('加载pull-proxy页面时发生错误:', error);
-        content.innerHTML = `
-            <div class="text-center p-10 text-white/60 font-semibold">
-                网络错误: ${error.message}
-            </div>
-        `;
-    }
-}
-
-async function loadPushProxyPage() {
-    const content = document.getElementById('push-proxy-content');
-    console.log('开始加载push-proxy页面...');
-    
-    content.innerHTML = `
-        <div class="flex justify-center items-center h-64">
-            <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mx-auto mb-4"></div>
-            <span class="text-white/60 font-semibold">加载中...</span>
-        </div>
-    `;
-    
-    try {
-        console.log('正在获取push-proxy.html文件...');
-        const response = await fetch('pages/push-proxy.html');
-        console.log('push-proxy.html文件获取成功，状态:', response.status);
-        
-        if (response.ok) {
-            const html = await response.text();
-            console.log('push-proxy.html文件内容长度:', html.length);
-            content.innerHTML = html;
-            console.log('push-proxy.html文件内容已加载到页面');
-        } else {
-            console.error('加载push-proxy.html文件失败，状态:', response.status);
-            content.innerHTML = `
-                <div class="text-center p-10 text-white/60 font-semibold">
-                    加载推流代理页面失败
-                </div>
-            `;
-        }
-    } catch (error) {
-        console.error('加载push-proxy页面时发生错误:', error);
         content.innerHTML = `
             <div class="text-center p-10 text-white/60 font-semibold">
                 网络错误: ${error.message}
