@@ -9,7 +9,7 @@ from py_plugin import PluginBase
 from urllib.parse import parse_qs, unquote
 
 class PluginOnPlay(PluginBase):
-    name = "on_play_token_auth"
+    name = "play_token_auth"
     version = "1.0.0"
     description = "播放鉴权插件，鉴权失败后会拒绝播放请求。"
     type = "on_play"

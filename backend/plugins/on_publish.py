@@ -8,7 +8,7 @@ from py_plugin import PluginBase
 from urllib.parse import parse_qs
 
 class PluginOnPublish(PluginBase):
-    name = "on_publish_token_auth"
+    name = "publish_token_auth"
     version = "1.0.0"
     description = "推流鉴权插件，鉴权失败后会拒绝推流请求。"
     type = "on_publish"
