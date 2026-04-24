@@ -73,13 +73,18 @@ class Database:
         
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS recordings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                app TEXT NOT NULL,
-                stream TEXT not NULL,
-                url TEXT NOT NULL,
-                file_path TEXT,
-                file_size INTEGER,
-                created_at TIMESTAMP DEFAULT current_TIMESTAMP
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                vhost       TEXT NOT NULL DEFAULT '__defaultVhost__',
+                app         TEXT NOT NULL,
+                stream      TEXT NOT NULL,
+                file_name   TEXT,
+                file_path   TEXT,
+                file_size   INTEGER,
+                url         TEXT NOT NULL,
+                start_time  INTEGER,
+                time_len    REAL,
+                created_at  TIMESTAMP DEFAULT current_timestamp,
+                UNIQUE(file_path)
             )
         ''')
         
@@ -145,6 +150,7 @@ class Database:
             ("on_player_proxy_failed", "pull_proxy_failover",   "{}", 0, 1),
             ("on_start",               "pull_proxy_restore",    "{}", 0, 1),
             ("on_http_access",         "http_access_frontend",  "{}", 0, 1),
+            ("on_record_mp4",          "record_mp4_logger",     "{}", 0, 1),
         ]
         for event_type, plugin_name, params, priority, enabled in defaults:
             self.cursor.execute(
@@ -254,61 +260,88 @@ class Database:
             mk_logger.log_warn(f"Failed to delete proxy: {e}")
             return False
     
-    def add_recording(self, app: str, stream: str, url: str, file_path: Optional[str] = None, file_size: Optional[int] = None) -> Optional[Dict[str, Any]]:
-        """Add a recording"""
+    def add_recording(self, info: dict) -> Optional[int]:
+        """写入一条 on_record_mp4 录像记录，file_path 相同则忽略"""
         try:
             self.cursor.execute(
-                'INSERT INTO recordings (app, stream, url, file_path, file_size, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-                (app, stream, url, file_path, file_size, datetime.now())
+                '''INSERT OR IGNORE INTO recordings
+                   (vhost, app, stream, file_name, file_path, file_size, url, start_time, time_len)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                (
+                    info.get("vhost", "__defaultVhost__"),
+                    info.get("app", ""),
+                    info.get("stream", ""),
+                    info.get("file_name", ""),
+                    info.get("file_path", ""),
+                    int(info.get("file_size", 0) or 0),
+                    info.get("url", ""),
+                    int(info.get("start_time", 0) or 0),
+                    float(info.get("time_len", 0.0) or 0.0),
+                ),
             )
             self.connection.commit()
-        except sqlite3.IntegrityError as e:
-            mk_logger.log_warn(f"Failed to add recording: {e}")
-    
-    def get_recordings(self, app: str, stream: str, limit: int = 100) -> List[Dict[str, Any]]:
-        """Get recordings for a specific stream"""
+            return self.cursor.lastrowid
+        except Exception as e:
+            mk_logger.log_warn(f"add_recording error: {e}")
+            return None
+
+    def get_recordings(self, app: str = "", stream: str = "", vhost: str = "",
+                       date: str = "", limit: int = 500, offset: int = 0) -> List[Dict[str, Any]]:
+        """查询录像列表，支持按 app/stream/vhost/日期过滤"""
         try:
+            clauses, params = [], []
+            if vhost:
+                clauses.append("vhost = ?"); params.append(vhost)
+            if app:
+                clauses.append("app = ?"); params.append(app)
+            if stream:
+                clauses.append("stream = ?"); params.append(stream)
+            if date:
+                # date 格式 YYYY-MM-DD，与 created_at 前10位匹配
+                clauses.append("substr(created_at, 1, 10) = ?"); params.append(date)
+            where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+            params += [limit, offset]
             self.cursor.execute(
-                'SELECT * FROM recordings WHERE app = ? AND stream = ? ORDER BY created_at DESC LIMIT ?',
-                (app, stream, limit)
+                f"SELECT * FROM recordings {where} ORDER BY start_time DESC LIMIT ? OFFSET ?",
+                params,
             )
-            recordings = []
-            for row in self.cursor.fetchall():
-                recordings.append({
-                    'id': row[0],
-                    'app': row[1],
-                    'stream': row[2],
-                    'url': row[3],
-                    'file_path': row[4],
-                    'file_size': row[5],
-                    'created_at': row[6]
-                })
-            return recordings
-        except sqlite3.Error as e:
-            print(f"Failed to get recordings: {e}")
+            return [dict(r) for r in self.cursor.fetchall()]
+        except Exception as e:
+            mk_logger.log_warn(f"get_recordings error: {e}")
             return []
-    
-    def get_recording(self, app: str, stream: str, file_path: str) -> Optional[Dict[str, Any]]:
-        """Get a specific recording"""
+
+    def get_recording_streams(self) -> List[Dict[str, Any]]:
+        """返回所有有录像的 vhost/app/stream 组合（去重）"""
         try:
             self.cursor.execute(
-                'SELECT * FROM recordings WHERE app = ? AND stream = ? AND file_path = ?',
-                (app, stream, file_path)
+                "SELECT DISTINCT vhost, app, stream FROM recordings ORDER BY app, stream"
+            )
+            return [dict(r) for r in self.cursor.fetchall()]
+        except Exception as e:
+            mk_logger.log_warn(f"get_recording_streams error: {e}")
+            return []
+
+    def delete_recording(self, recording_id: int) -> bool:
+        """删除一条录像记录"""
+        try:
+            self.cursor.execute("DELETE FROM recordings WHERE id = ?", (recording_id,))
+            self.connection.commit()
+            return True
+        except Exception as e:
+            mk_logger.log_warn(f"delete_recording error: {e}")
+            return False
+
+    def get_recording(self, app: str, stream: str, file_path: str) -> Optional[Dict[str, Any]]:
+        """按 file_path 查询单条录像"""
+        try:
+            self.cursor.execute(
+                "SELECT * FROM recordings WHERE app = ? AND stream = ? AND file_path = ?",
+                (app, stream, file_path),
             )
             row = self.cursor.fetchone()
-            if row:
-                return {
-                    'id': row[0],
-                    'app': row[1],
-                    'stream': row[2],
-                    'url': row[3],
-                    'file_path': row[4],
-                    'file_size': row[5],
-                    'created_at': row[6]
-                }
-            return None
-        except sqlite3.Error as e:
-            print(f"Failed to get recording: {e}")
+            return dict(row) if row else None
+        except Exception as e:
+            mk_logger.log_warn(f"get_recording error: {e}")
             return None
     
     def add_protocol_option(self, name: str, **kwargs) -> Optional[int]:

@@ -1276,3 +1276,62 @@ async def get_plugin_url_params(
     except Exception as e:
         mk_logger.log_warn(f"get_plugin_url_params error: {e}")
         return {"code": -1, "msg": str(e)}
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 录像管理接口
+# ══════════════════════════════════════════════════════════════════════
+
+@app.get(
+    "/index/pyapi/recordings/streams",
+    tags=["录像管理"],
+    summary="获取所有有录像记录的流列表",
+)
+async def get_recording_streams():
+    """返回数据库中所有有录像记录的 vhost/app/stream 去重列表"""
+    try:
+        return {"code": 0, "data": db.get_recording_streams()}
+    except Exception as e:
+        mk_logger.log_warn(f"get_recording_streams error: {e}")
+        return {"code": -1, "msg": str(e)}
+
+
+@app.get(
+    "/index/pyapi/recordings",
+    tags=["录像管理"],
+    summary="查询录像列表",
+)
+async def get_recordings(
+    app: str = Query(default="", description="应用名，空则不过滤"),
+    stream: str = Query(default="", description="流ID，空则不过滤"),
+    vhost: str = Query(default="", description="虚拟主机，空则不过滤"),
+    date: str = Query(default="", description="日期 YYYY-MM-DD，空则不过滤"),
+    limit: int = Query(default=200, description="最多返回条数"),
+    offset: int = Query(default=0, description="分页偏移"),
+):
+    try:
+        rows = db.get_recordings(app=app, stream=stream, vhost=vhost,
+                                 date=date, limit=limit, offset=offset)
+        return {"code": 0, "data": rows, "total": len(rows)}
+    except Exception as e:
+        mk_logger.log_warn(f"get_recordings error: {e}")
+        return {"code": -1, "msg": str(e)}
+
+
+@app.post(
+    "/index/pyapi/recordings/delete",
+    tags=["录像管理"],
+    summary="删除录像记录（仅删数据库记录，不删文件）",
+)
+async def delete_recording(request: Request):
+    try:
+        body = await request.body()
+        data = json.loads(body.decode()) if body else {}
+        rec_id = data.get("id")
+        if not rec_id:
+            return {"code": -1, "msg": "id 不能为空"}
+        db.delete_recording(int(rec_id))
+        return {"code": 0, "msg": "删除成功"}
+    except Exception as e:
+        mk_logger.log_warn(f"delete_recording error: {e}")
+        return {"code": -1, "msg": str(e)}

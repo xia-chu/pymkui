@@ -1,0 +1,96 @@
+<div class="space-y-6">
+    <!-- 标题栏 -->
+    <div class="flex justify-between items-center mb-4 flex-wrap gap-3">
+        <div class="flex items-center gap-3">
+            <div class="bg-white/20 w-10 h-10 rounded-full flex items-center justify-center">
+                <i class="fa fa-film text-white text-xl"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">录像管理</h2>
+        </div>
+        <button onclick="loadRecordingsPage()" class="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg transition">
+            <i class="fa fa-refresh mr-1"></i>刷新
+        </button>
+    </div>
+
+    <div class="flex gap-4 flex-wrap lg:flex-nowrap">
+        <!-- 左侧：流列表 -->
+        <div class="w-full lg:w-64 shrink-0">
+            <div class="bg-white/5 rounded-xl border border-white/10 p-4">
+                <div class="text-white/60 text-xs mb-3 font-semibold uppercase tracking-wider">录像流列表</div>
+                <div class="space-y-1.5 mb-3">
+                    <input id="recSearchVhost" type="text" placeholder="虚拟主机…" value="__defaultVhost__"
+                        oninput="filterRecStreamList()"
+                        class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-1.5 text-white text-xs placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-primary">
+                    <input id="recSearchApp" type="text" placeholder="应用名…"
+                        oninput="filterRecStreamList()"
+                        class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-1.5 text-white text-xs placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-primary">
+                    <input id="recSearchStream" type="text" placeholder="流 ID…"
+                        oninput="filterRecStreamList()"
+                        class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-1.5 text-white text-xs placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-primary">
+                </div>
+                <ul id="recStreamList" class="space-y-1 max-h-[calc(100vh-280px)] overflow-y-auto pr-1">
+                    <li class="text-white/30 text-xs text-center py-4">加载中…</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- 右侧：时间轴 + 列表 -->
+        <div class="flex-1 min-w-0 space-y-4">
+            <!-- 筛选栏 -->
+            <div class="bg-white/5 rounded-xl border border-white/10 p-4 flex flex-wrap gap-3 items-end">
+                <div>
+                    <label class="text-white/60 text-xs block mb-1">日期</label>
+                    <input id="recDatePicker" type="date"
+                        class="bg-white/10 border border-white/20 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        oninput="loadRecordingList()">
+                </div>
+                <button onclick="loadRecordingList()"
+                    class="bg-gradient-primary text-white px-5 py-2 rounded-lg font-semibold hover:shadow-neon transition self-end">
+                    <i class="fa fa-search mr-1"></i>查询
+                </button>
+                <span id="recStatText" class="text-white/40 text-xs self-end"></span>
+            </div>
+
+            <!-- 时间轴 -->
+            <div class="bg-white/5 rounded-xl border border-white/10 p-4">
+                <div class="text-white/60 text-xs mb-3 font-semibold uppercase tracking-wider flex justify-between">
+                    <span>时间轴（当日录像分布）</span>
+                    <span id="timelineDate" class="text-white/30 font-normal"></span>
+                </div>
+                <div id="recTimeline" class="relative w-full" style="height:48px;">
+                    <div class="absolute inset-0 bg-white/5 rounded-lg overflow-hidden" id="timelineTrack">
+                        <!-- 时间段色块由 JS 渲染 -->
+                    </div>
+                    <!-- 时间刻度 -->
+                    <div class="absolute left-0 right-0 bottom-0 flex justify-between px-0.5">
+                        <span class="text-white/30 text-[10px]">0:00</span>
+                        <span class="text-white/30 text-[10px]">6:00</span>
+                        <span class="text-white/30 text-[10px]">12:00</span>
+                        <span class="text-white/30 text-[10px]">18:00</span>
+                        <span class="text-white/30 text-[10px]">24:00</span>
+                    </div>
+                    <!-- Tooltip -->
+                    <div id="timelineTip" class="hidden absolute -top-7 bg-black/80 text-white text-xs px-2 py-1 rounded pointer-events-none whitespace-nowrap"></div>
+                </div>
+            </div>
+
+            <!-- 录像列表 -->
+            <div class="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
+                <table class="w-full">
+                    <thead>
+                        <tr class="border-b border-white/10">
+                            <th class="text-left py-3 px-4 text-white/70 font-semibold text-sm">文件名</th>
+                            <th class="text-left py-3 px-4 text-white/70 font-semibold text-sm">开始时间</th>
+                            <th class="text-left py-3 px-4 text-white/70 font-semibold text-sm">时长</th>
+                            <th class="text-left py-3 px-4 text-white/70 font-semibold text-sm">大小</th>
+                            <th class="text-left py-3 px-4 text-white/70 font-semibold text-sm">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="recTableBody">
+                        <tr><td colspan="5" class="text-center text-white/30 py-10">← 请先选择左侧流</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>

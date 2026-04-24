@@ -205,6 +205,9 @@ function loadPageData(pageName) {
         case 'plugins':
             loadPluginsPage();
             break;
+        case 'recordings':
+            loadRecordingsPageWrapper();
+            break;
         default:
             break;
     }
@@ -812,4 +815,15 @@ async function loadPluginsPage() {
     } catch (e) {
         content.innerHTML = `<div class="text-center p-10 text-white/60">网络错误: ${e.message}</div>`;
     }
+}
+
+async function loadRecordingsPageWrapper() {
+    const content = document.getElementById('recordings-content');
+    if (!content) return;
+    if (!content.dataset.loaded) {
+        const resp = await fetch('pages/recordings.html');
+        content.innerHTML = resp.ok ? await resp.text() : '<div class="text-white/40 p-10 text-center">加载失败</div>';
+        content.dataset.loaded = '1';
+    }
+    if (typeof loadRecordingsPage === 'function') loadRecordingsPage();
 }
