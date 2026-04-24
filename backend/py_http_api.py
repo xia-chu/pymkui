@@ -14,7 +14,7 @@ from typing import Optional
 from fastapi import Request
 from fastapi import FastAPI, Request, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from database import Database
 
 
@@ -1335,3 +1335,30 @@ async def delete_recording(request: Request):
     except Exception as e:
         mk_logger.log_warn(f"delete_recording error: {e}")
         return {"code": -1, "msg": str(e)}
+
+
+@app.get(
+    "/index/pyapi/recordings/file",
+    tags=["录像管理"],
+    summary="重定向到 ZLM downloadFile 接口播放录像",
+)
+async def serve_recording_file(id: int = Query(..., description="录像记录 ID")):
+    """
+    查库获取录像 file_path，重定向到 ZLM 内置接口 /index/api/downloadFile?file_path=...
+    由 ZLM 负责 HTTP Range 流式传输，后端不加载文件内容到内存。
+    """
+    try:
+        row = db.get_recording_by_id(int(id))
+        if not row:
+            raise HTTPException(status_code=404, detail="录像记录不存在")
+        file_path = row.get("file_path", "")
+        if not file_path:
+            raise HTTPException(status_code=404, detail="录像文件路径为空")
+        encoded = urllib.parse.quote(file_path, safe='')
+        redirect_url = f"/index/api/downloadFile?file_path={encoded}"
+        return RedirectResponse(url=redirect_url, status_code=302)
+    except HTTPException:
+        raise
+    except Exception as e:
+        mk_logger.log_warn(f"serve_recording_file error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

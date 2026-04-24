@@ -343,6 +343,16 @@ class Database:
         except Exception as e:
             mk_logger.log_warn(f"get_recording error: {e}")
             return None
+
+    def get_recording_by_id(self, rec_id: int) -> Optional[Dict[str, Any]]:
+        """按主键 id 查询单条录像"""
+        try:
+            self.cursor.execute("SELECT * FROM recordings WHERE id = ?", (rec_id,))
+            row = self.cursor.fetchone()
+            return dict(row) if row else None
+        except Exception as e:
+            mk_logger.log_warn(f"get_recording_by_id error: {e}")
+            return None
     
     def add_protocol_option(self, name: str, **kwargs) -> Optional[int]:
         """Add a protocol option preset"""

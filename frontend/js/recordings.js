@@ -109,6 +109,10 @@ function renderRecTable(list) {
             <td class="py-2.5 px-4 text-sm text-white/60">${duration}</td>
             <td class="py-2.5 px-4 text-sm text-white/60">${size}</td>
             <td class="py-2.5 px-4">
+                <button onclick="playRecording(${r.id})"
+                    class="text-primary/80 hover:text-primary text-xs transition mr-3" title="播放">
+                    <i class="fa fa-play mr-1"></i>播放
+                </button>
                 <button onclick="deleteRecording(${r.id})"
                     class="text-red-400/70 hover:text-red-400 text-xs transition" title="删除记录">
                     <i class="fa fa-trash mr-1"></i>删除
@@ -221,4 +225,46 @@ function escHtmlRec(s) {
 }
 function escRec(s) {
     return String(s).replace(/'/g, "\\'");
+}
+
+// ── 播放录像 ──────────────────────────────────────────────────────────
+function playRecording(id) {
+    const url = `/index/pyapi/recordings/file?id=${id}`;
+    // 复用或新建模态框
+    let modal = document.getElementById('recPlayerModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'recPlayerModal';
+        modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm';
+        modal.innerHTML = `
+            <div class="relative bg-gray-900 rounded-2xl shadow-2xl overflow-hidden w-full max-w-3xl mx-4">
+                <div class="flex items-center justify-between px-5 py-3 border-b border-white/10">
+                    <span class="text-white font-semibold text-sm">录像播放</span>
+                    <button onclick="closeRecPlayer()" class="text-white/50 hover:text-white transition text-lg leading-none">&times;</button>
+                </div>
+                <div class="p-4 bg-black">
+                    <video id="recPlayerVideo" controls autoplay
+                        class="w-full rounded-lg max-h-[70vh] bg-black outline-none"
+                        style="min-height:200px;">
+                        您的浏览器不支持 video 标签。
+                    </video>
+                </div>
+            </div>`;
+        modal.addEventListener('click', e => { if (e.target === modal) closeRecPlayer(); });
+        document.body.appendChild(modal);
+    }
+    const video = document.getElementById('recPlayerVideo');
+    video.src = url;
+    video.load();
+    video.play().catch(() => {});
+    modal.classList.remove('hidden');
+}
+
+function closeRecPlayer() {
+    const modal = document.getElementById('recPlayerModal');
+    if (modal) {
+        const video = document.getElementById('recPlayerVideo');
+        if (video) { video.pause(); video.src = ''; }
+        modal.classList.add('hidden');
+    }
 }
