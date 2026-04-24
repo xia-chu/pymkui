@@ -140,8 +140,27 @@ class Database:
         self.cursor.execute("SELECT COUNT(*) FROM plugin_bindings")
         if self.cursor.fetchone()[0] == 0:
             self._init_default_plugin_bindings()
+        else:
+            # 补插可能缺失的新默认绑定（兼容老数据库）
+            self._ensure_default_plugin_bindings()
 
         mk_logger.log_info(f"Database initialized at {self.db_path}")
+
+    def _ensure_default_plugin_bindings(self):
+        """对老数据库补插新增的默认绑定（INSERT OR IGNORE，不覆盖已有记录）"""
+        new_defaults = [
+            ("on_start", "record_cleanup", '{}', 10, 1),
+        ]
+        for event_type, plugin_name, params, priority, enabled in new_defaults:
+            self.cursor.execute(
+                """
+                INSERT OR IGNORE INTO plugin_bindings
+                    (event_type, plugin_name, params, priority, enabled)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (event_type, plugin_name, params, priority, enabled),
+            )
+        self.connection.commit()
 
     def _init_default_plugin_bindings(self):
         """插入内置插件的默认绑定记录（仅首次建库、表为空时调用）"""
@@ -149,6 +168,7 @@ class Database:
             ("on_stream_not_found",    "pull_proxy_on_demand",  "{}", 0, 1),
             ("on_player_proxy_failed", "pull_proxy_failover",   "{}", 0, 1),
             ("on_start",               "pull_proxy_restore",    "{}", 0, 1),
+            ("on_start",               "record_cleanup",        '{}', 10, 1),
             ("on_http_access",         "http_access_frontend",  "{}", 0, 1),
             ("on_record_mp4",          "record_mp4_logger",     "{}", 0, 1),
         ]
