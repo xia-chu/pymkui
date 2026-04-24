@@ -379,13 +379,19 @@ async function showStreamInfo(schema, vhost, app, stream) {
                     ${renderStreamInfo(data, vhost, app, stream)}
                 </div>
                 <div class="flex justify-end gap-2 pt-4 mt-2 border-t border-white/10 shrink-0">
+                    <button class="bg-purple-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:shadow-neon transition-colors rec-nav-btn" data-vhost="${vhost}" data-app="${app}" data-stream="${stream}"><i class="fa fa-film mr-1"></i>录像</button>
                     <button class="bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:shadow-neon transition-colors" onclick="showStreamPlayers('${schema}', '${vhost}', '${app}', '${stream}')"><i class="fa fa-users mr-1"></i>观众</button>
                     <button class="bg-red-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:shadow-neon transition-colors" onclick="stopStream('${schema}', '${vhost}', '${app}', '${stream}')"><i class="fa fa-stop mr-1"></i>停止</button>
                 </div>
             </div>
         `;
         document.getElementById('streams-modal-container').appendChild(modal);
-        
+
+        // 录像按钮：通过 data-* 避免引号嵌套问题
+        modal.querySelector('.rec-nav-btn')?.addEventListener('click', function() {
+            navigateToRecordings(this.dataset.vhost, this.dataset.app, this.dataset.stream);
+        });
+
         modal.addEventListener('click', function(e) {
             if (e.target === modal) {
                 modal.remove();

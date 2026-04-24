@@ -89,6 +89,54 @@ function selectRecStream(vhost, app, stream) {
     loadRecordingList();
 }
 
+// ── 从外部跳转到录像管理并定位到指定流 ──────────────────────────────
+function navigateToRecordings(vhost, app, stream) {
+    // 关闭流信息弹窗（如果存在）
+    document.querySelectorAll('[data-modal="streams"]').forEach(m => m.remove());
+
+    // 跳转到录像管理页
+    if (typeof addTab === 'function') {
+        addTab('recordings', '录像管理', 'fa-film');
+    }
+
+    // 等页面加载完后设置筛选条件
+    const _apply = () => {
+        // 设置搜索框
+        const vh = document.getElementById('recSearchVhost');
+        const ap = document.getElementById('recSearchApp');
+        const st = document.getElementById('recSearchStream');
+        if (!vh || !ap || !st) {
+            setTimeout(_apply, 100);
+            return;
+        }
+        if (vh) vh.value = vhost || '';
+        if (ap) ap.value = app   || '';
+        if (st) st.value = stream || '';
+
+        // 设置今天日期
+        const today = new Date().toISOString().slice(0, 10);
+        _recSelectedDate = today;
+        _updateRecDateBtn(today);
+        _fillDayTimeRange(today);
+
+        // 过滤流列表并选中该流
+        filterRecStreamList();
+        // 稍等流列表加载完毕再选中
+        const _pick = () => {
+            const found = _recAllStreams.find(
+                s => s.vhost === vhost && s.app === app && s.stream === stream
+            );
+            if (found) {
+                selectRecStream(vhost, app, stream);
+            } else if (_recAllStreams.length === 0) {
+                setTimeout(_pick, 150);
+            }
+        };
+        _pick();
+    };
+    setTimeout(_apply, 200);
+}
+
 // ── 录像列表 ──────────────────────────────────────────────────────────
 async function loadRecordingList() {
     if (!_recSelectedStream) return;
