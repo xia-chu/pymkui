@@ -223,7 +223,8 @@ function renderDragList(containerId, plugins, showParamsBtn) {
             data-plugin-name="${escHtml(p.name)}"
             data-plugin-type="${escHtml(p.type)}"
             ondragstart="dragStart(event)"
-            ondragend="dragEnd(event)">
+            ondragend="dragEnd(event)"
+            ondblclick="togglePluginBinding(this)">
             <i class="fa fa-grip-vertical text-white/30 text-xs shrink-0"></i>
             <span class="font-mono text-sm text-white font-semibold">${escHtml(p.name)}</span>
             ${exclusiveBadge}
@@ -231,6 +232,40 @@ function renderDragList(containerId, plugins, showParamsBtn) {
             ${paramsBtn}
         </div>`;
     }).join('');
+}
+
+// ── 双击切换绑定/解绑 ─────────────────────────────────────────────────
+function togglePluginBinding(el) {
+    const srcContainer = el.parentElement;
+    const isSelected   = srcContainer.id === 'selectedPlugins';
+    const targetId     = isSelected ? 'availablePlugins' : 'selectedPlugins';
+    const target       = document.getElementById(targetId);
+
+    srcContainer.removeChild(el);
+    _refreshEmptyHint(srcContainer);
+
+    const placeholder = target.querySelector('.pointer-events-none');
+    if (placeholder) placeholder.remove();
+
+    if (targetId === 'selectedPlugins') {
+        // 移入已绑定：追加参数按钮
+        if (!el.querySelector('button')) {
+            const pName = el.dataset.pluginName;
+            const btn   = document.createElement('button');
+            btn.type      = 'button';
+            btn.className = 'ml-auto shrink-0 text-yellow-400/70 hover:text-yellow-400 transition-colors text-xs';
+            btn.title     = '编辑绑定参数';
+            btn.innerHTML = '<i class="fa fa-cog mr-1"></i>参数';
+            btn.setAttribute('onclick', `openParamsModal('${pName}')`);
+            el.appendChild(btn);
+        }
+    } else {
+        // 移回未绑定：移除参数按钮
+        const btn = el.querySelector('button');
+        if (btn) btn.remove();
+    }
+
+    target.appendChild(el);
 }
 
 // ── 拖拽排序 ──────────────────────────────────────────────────────────
