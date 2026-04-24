@@ -39,6 +39,9 @@ class PluginBase:
     # exclusive=False → 监听型：无论 run() 返回什么，都继续执行后续插件
     #                   适用于日志记录、消息推送、写库等不影响业务流程的旁路处理
     exclusive = True
+    # abstract=True 表示该类是中间抽象基类，不会被注册为实际插件。
+    # 插件加载器会跳过所有 abstract=True 的类，只注册 abstract=False 的具体插件。
+    abstract = False
 
     def get_url_params(self, **kwargs) -> dict:
         """
@@ -116,7 +119,7 @@ class PluginRegistry:
                     mk_logger.log_info(f"[PluginRegistry] 加载模块: {module_name}")
 
                 for cls_name, obj in inspect.getmembers(module, inspect.isclass):
-                    if issubclass(obj, PluginBase) and obj is not PluginBase:
+                    if issubclass(obj, PluginBase) and obj is not PluginBase and not obj.abstract:
                         instance = obj()
                         with self._lock:
                             self._plugins[instance.name] = instance
