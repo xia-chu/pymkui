@@ -341,10 +341,35 @@ class Database:
             mk_logger.log_warn(f"get_recording_streams error: {e}")
             return []
 
+    def _remove_file_and_empty_parents(self, file_path: Optional[str]):
+        """删除文件，然后逐级向上删除空目录"""
+        if not file_path or not os.path.isfile(file_path):
+            return
+        try:
+            os.remove(file_path)
+        except Exception as e:
+            mk_logger.log_warn(f"[Database] 删除文件失败 {file_path}: {e}")
+            return
+        # 逐级向上清理空目录
+        parent = os.path.dirname(file_path)
+        while parent and os.path.isdir(parent):
+            try:
+                if os.listdir(parent):  # 非空，停止
+                    break
+                os.rmdir(parent)
+                mk_logger.log_info(f"[Database] 删除空目录 {parent}")
+                parent = os.path.dirname(parent)
+            except Exception:
+                break
+
     def delete_recording(self, recording_id: int) -> bool:
-        """删除一条录像记录"""
+        """删除一条录像记录，同时删除文件及空父目录"""
         try:
             cur = self._cursor()
+            cur.execute("SELECT file_path FROM recordings WHERE id = ?", (recording_id,))
+            row = cur.fetchone()
+            if row:
+                self._remove_file_and_empty_parents(row["file_path"])
             cur.execute("DELETE FROM recordings WHERE id = ?", (recording_id,))
             self.connection.commit()
             return True
@@ -387,12 +412,7 @@ class Database:
             )
             rows = cur.fetchall()
             for r in rows:
-                fp = r["file_path"] if "file_path" in r.keys() else None
-                if fp and os.path.isfile(fp):
-                    try:
-                        os.remove(fp)
-                    except Exception:
-                        pass
+                self._remove_file_and_empty_parents(r["file_path"] if "file_path" in r.keys() else None)
             cur.execute(
                 "DELETE FROM recordings WHERE vhost=? AND app=? AND stream=?",
                 (vhost, app, stream)
@@ -413,12 +433,7 @@ class Database:
             )
             rows = cur.fetchall()
             for r in rows:
-                fp = r["file_path"] if "file_path" in r.keys() else None
-                if fp and os.path.isfile(fp):
-                    try:
-                        os.remove(fp)
-                    except Exception:
-                        pass
+                self._remove_file_and_empty_parents(r["file_path"] if "file_path" in r.keys() else None)
             cur.execute(
                 "DELETE FROM recordings WHERE vhost=? AND app=? AND stream=? AND substr(created_at,1,10)=?",
                 (vhost, app, stream, date)

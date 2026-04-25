@@ -73,17 +73,17 @@ def _do_cleanup(max_size_bytes: float, max_days: int):
             file_size  = r.get("file_size") or 0
             rec_id     = r.get("id")
 
-            # 删除文件
-            if file_path and os.path.isfile(file_path):
+            # 删除文件及空父目录
+            if file_path:
                 try:
-                    os.remove(file_path)
+                    db._remove_file_and_empty_parents(file_path)
                     mk_logger.log_info(
                         f"[record_cleanup] 已删文件 {file_path}（{reason}）"
                     )
                 except Exception as e:
                     mk_logger.log_warn(f"[record_cleanup] 删除文件失败 {file_path}: {e}")
 
-            # 删除数据库记录
+            # 删除数据库记录（文件已删，delete_recording 内部会跳过文件删除）
             try:
                 if rec_id is not None:
                     db.delete_recording(int(rec_id))
