@@ -548,10 +548,41 @@ function clearRecDate() {
     loadRecordingList();
 }
 
-// ── 播放录像 ──────────────────────────────────────────────────────────
-function playRecording(id) {
-    const url = `/index/pyapi/recordings/file?id=${id}&disposition=inline`;
-    // 复用或新建模态框
+// ── 播放全天录像（顺序播放 MP4） ──────────────────────────────────────
+function playDayRecordings() {
+    if (!_recSelectedStream) {
+        showToast('请先选择左侧流', 'error');
+        return;
+    }
+    const date = _recSelectedDate;
+    if (!date) {
+        showToast('请先选择日期', 'error');
+        return;
+    }
+    const { vhost, app, stream } = _recSelectedStream;
+    const params = new URLSearchParams({ vhost, app, stream, date });
+
+    fetch(`/index/pyapi/recordings/day?${params.toString()}`)
+        .then(r => r.json())
+        .then(res => {
+            if (res.code !== 0 || !res.data || res.data.length === 0) {
+                showToast(res.msg || '该流当天暂无录像', 'error');
+                return;
+            }
+            _playDayList(res.data, 0, app, stream, date);
+        })
+        .catch(() => showToast('获取全天录像列表失败', 'error'));
+}
+
+// 顺序播放录像列表
+function _playDayList(list, idx, app, stream, date) {
+    if (idx >= list.length) return;
+    const rec = list[idx];
+    const url = `/index/pyapi/recordings/file?id=${rec.id}&disposition=inline`;
+
+    // 销毁旧的 hls 实例（如有）
+    if (window._recHls) { window._recHls.destroy(); window._recHls = null; }
+
     let modal = document.getElementById('recPlayerModal');
     if (!modal) {
         modal = document.createElement('div');
@@ -560,7 +591,7 @@ function playRecording(id) {
         modal.innerHTML = `
             <div class="relative bg-gray-900 rounded-2xl shadow-2xl overflow-hidden w-full max-w-3xl mx-4">
                 <div class="flex items-center justify-between px-5 py-3 border-b border-white/10">
-                    <span class="text-white font-semibold text-sm">录像播放</span>
+                    <span class="text-white font-semibold text-sm" id="recPlayerTitle">录像播放</span>
                     <button onclick="closeRecPlayer()" class="text-white/50 hover:text-white transition text-lg leading-none">&times;</button>
                 </div>
                 <div class="p-4 bg-black">
@@ -574,6 +605,50 @@ function playRecording(id) {
         modal.addEventListener('click', e => { if (e.target === modal) closeRecPlayer(); });
         document.body.appendChild(modal);
     }
+
+    const titleEl = document.getElementById('recPlayerTitle');
+    if (titleEl) titleEl.textContent = `全天播放 · ${app}/${stream} · ${date} (${idx + 1}/${list.length})`;
+
+    const video = document.getElementById('recPlayerVideo');
+    video.src = url;
+    modal.classList.remove('hidden');
+    video.load();
+    video.play().catch(() => {});
+
+    // 播放结束后自动切到下一条
+    video.onended = () => _playDayList(list, idx + 1, app, stream, date);
+}
+
+// ── 播放单条录像 ──────────────────────────────────────────────────────
+function playRecording(id) {
+    const url = `/index/pyapi/recordings/file?id=${id}&disposition=inline`;
+    // 销毁可能存在的 hls 实例
+    if (window._recHls) { window._recHls.destroy(); window._recHls = null; }
+    // 复用或新建模态框
+    let modal = document.getElementById('recPlayerModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'recPlayerModal';
+        modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm';
+        modal.innerHTML = `
+            <div class="relative bg-gray-900 rounded-2xl shadow-2xl overflow-hidden w-full max-w-3xl mx-4">
+                <div class="flex items-center justify-between px-5 py-3 border-b border-white/10">
+                    <span class="text-white font-semibold text-sm" id="recPlayerTitle">录像播放</span>
+                    <button onclick="closeRecPlayer()" class="text-white/50 hover:text-white transition text-lg leading-none">&times;</button>
+                </div>
+                <div class="p-4 bg-black">
+                    <video id="recPlayerVideo" controls autoplay
+                        class="w-full rounded-lg max-h-[70vh] bg-black outline-none"
+                        style="min-height:200px;">
+                        您的浏览器不支持 video 标签。
+                    </video>
+                </div>
+            </div>`;
+        modal.addEventListener('click', e => { if (e.target === modal) closeRecPlayer(); });
+        document.body.appendChild(modal);
+    }
+    const titleEl = document.getElementById('recPlayerTitle');
+    if (titleEl) titleEl.textContent = '录像播放';
     const video = document.getElementById('recPlayerVideo');
     video.src = url;
     video.load();
@@ -586,6 +661,7 @@ function closeRecPlayer() {
     if (modal) {
         const video = document.getElementById('recPlayerVideo');
         if (video) { video.pause(); video.src = ''; }
+        if (window._recHls) { window._recHls.destroy(); window._recHls = null; }
         modal.classList.add('hidden');
     }
 }

@@ -1351,7 +1351,7 @@ async def get_recording_dates(
 async def delete_recording(request: Request):
     try:
         body = await request.body()
-        data = json.loads(body.decode()) if body else {}
+        data = json.loads(body.decode("utf-8")) if body else {}
         rec_id = data.get("id")
         if not rec_id:
             return {"code": -1, "msg": "id 不能为空"}
@@ -1400,3 +1400,27 @@ async def serve_recording_file(
     except Exception as e:
         mk_logger.log_warn(f"serve_recording_file error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get(
+    "/index/pyapi/recordings/day",
+    tags=["录像管理"],
+    summary="获取指定流某天全部录像的有序列表（用于前端顺序播放）",
+)
+async def get_day_recordings(
+    vhost:  str = Query(default="", description="虚拟主机"),
+    app:    str = Query(...,        description="应用名"),
+    stream: str = Query(...,        description="流ID"),
+    date:   str = Query(...,        description="日期 YYYY-MM-DD"),
+):
+    """返回当天所有录像按 start_time 升序排列的列表，前端用于逐条顺序播放。"""
+    try:
+        rows = db.get_recordings(vhost=vhost, app=app, stream=stream,
+                                 date=date, limit=10000)
+        rows.sort(key=lambda r: r.get("start_time") or 0)
+        rows = [r for r in rows if r.get("file_path")]
+        if not rows:
+            return {"code": 1, "msg": "该流当天暂无录像", "data": []}
+        return {"code": 0, "data": rows}
+    except Exception as e:
+        mk_logger.log_warn(f"get_day_recordings error: {e}")
+        return {"code": -1, "msg": str(e), "data": []}

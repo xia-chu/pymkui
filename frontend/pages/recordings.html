@@ -84,9 +84,15 @@
 
             <!-- 时间轴 -->
             <div class="bg-white/5 rounded-xl border border-white/10 p-4">
-                <div class="text-white/60 text-xs mb-3 font-semibold uppercase tracking-wider flex justify-between">
+                <div class="text-white/60 text-xs mb-3 font-semibold uppercase tracking-wider flex justify-between items-center">
                     <span>时间轴（当日录像分布）</span>
-                    <span id="timelineDate" class="text-white/30 font-normal"></span>
+                    <div class="flex items-center gap-2">
+                        <button onclick="playDayRecordings()"
+                            class="bg-primary/20 hover:bg-primary/40 text-primary border border-primary/40 px-3 py-1 rounded-lg text-xs transition flex items-center gap-1" title="用 HLS 连续播放当天全部录像">
+                            <i class="fa fa-play-circle"></i>播放全天
+                        </button>
+                        <span id="timelineDate" class="text-white/30 font-normal"></span>
+                    </div>
                 </div>
                 <div id="recTimeline" class="relative w-full cursor-pointer" style="height:48px;">
                     <div class="absolute inset-0 bg-white/5 rounded-lg overflow-hidden" id="timelineTrack">
