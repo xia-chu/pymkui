@@ -58,13 +58,18 @@ function renderRecStreamList(list) {
             _recSelectedStream.app    === s.app   &&
             _recSelectedStream.stream === s.stream;
         const fullLabel = `${s.app}/${s.stream}`;
-        return `<li>
+        return `<li class="group relative">
             <button onclick="selectRecStream('${escRec(s.vhost)}','${escRec(s.app)}','${escRec(s.stream)}')"
                 title="${escHtmlRec(fullLabel)}\n${escHtmlRec(s.vhost)}"
-                class="w-full text-left px-3 py-2 rounded-lg text-sm transition
+                class="w-full text-left px-3 py-2 pr-8 rounded-lg text-sm transition
                     ${isActive ? 'bg-primary text-white font-semibold' : 'text-white/70 hover:bg-white/10'}">
                 <div class="font-mono break-all leading-snug">${escHtmlRec(s.app)}/<wbr><span class="${isActive ? 'text-white' : 'text-primary/90'}">${escHtmlRec(s.stream)}</span></div>
                 <div class="text-[10px] text-white/30 break-all leading-tight mt-0.5">${escHtmlRec(s.vhost)}</div>
+            </button>
+            <button onclick="deleteStreamAllRecordings('${escRec(s.vhost)}','${escRec(s.app)}','${escRec(s.stream)}')"
+                title="删除该流全部录像"
+                class="absolute right-1.5 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-red-400/70 hover:text-red-400 p-1 rounded">
+                <i class="fa fa-trash text-xs"></i>
             </button>
         </li>`;
     }).join('');
@@ -387,6 +392,52 @@ async function deleteRecording(id) {
         const res = await apiPost('/index/pyapi/recordings/delete', { id });
         if (res.code === 0) {
             showToast('已删除', 'success');
+            await loadRecordingList();
+            await loadRecStreamList();
+        } else {
+            showToast(res.msg || '删除失败', 'error');
+        }
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+
+async function deleteStreamAllRecordings(vhost, app, stream) {
+    if (!confirm(`确定删除流 ${app}/${stream} 的全部录像记录及文件？此操作不可恢复！`)) return;
+    try {
+        const res = await apiPost('/index/pyapi/recordings/delete_stream', { vhost, app, stream });
+        if (res.code === 0) {
+            showToast(res.msg || '删除成功', 'success');
+            // 若当前选中的就是该流，清空选中状态
+            if (_recSelectedStream &&
+                _recSelectedStream.vhost === vhost &&
+                _recSelectedStream.app === app &&
+                _recSelectedStream.stream === stream) {
+                _recSelectedStream = null;
+                document.getElementById('recTableBody').innerHTML =
+                    '<tr><td colspan="5" class="text-center text-white/30 py-10">← 请先选择左侧流</td></tr>';
+                document.getElementById('timelineTrack').innerHTML = '';
+                document.getElementById('timelineDate').textContent = '';
+            }
+            await loadRecStreamList();
+        } else {
+            showToast(res.msg || '删除失败', 'error');
+        }
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+
+async function deleteDayRecordings() {
+    if (!_recSelectedStream) { showToast('请先选择左侧流', 'warning'); return; }
+    const date = _recSelectedDate;
+    if (!date) { showToast('请先选择日期', 'warning'); return; }
+    const { vhost, app, stream } = _recSelectedStream;
+    if (!confirm(`确定删除 ${app}/${stream} 在 ${date} 的全部录像记录及文件？此操作不可恢复！`)) return;
+    try {
+        const res = await apiPost('/index/pyapi/recordings/delete_day', { vhost, app, stream, date });
+        if (res.code === 0) {
+            showToast(res.msg || '删除成功', 'success');
             await loadRecordingList();
             await loadRecStreamList();
         } else {

@@ -1362,6 +1362,49 @@ async def delete_recording(request: Request):
         return {"code": -1, "msg": str(e)}
 
 
+@app.post(
+    "/index/pyapi/recordings/delete_stream",
+    tags=["录像管理"],
+    summary="删除指定流的全部录像记录及文件",
+)
+async def delete_recordings_by_stream(request: Request):
+    try:
+        body = await request.body()
+        data = json.loads(body.decode("utf-8")) if body else {}
+        vhost  = data.get("vhost",  "__defaultVhost__")
+        app    = data.get("app",    "")
+        stream = data.get("stream", "")
+        if not app or not stream:
+            return {"code": -1, "msg": "app 和 stream 不能为空"}
+        count = db.delete_recordings_by_stream(vhost, app, stream)
+        return {"code": 0, "msg": f"已删除 {count} 条录像"}
+    except Exception as e:
+        mk_logger.log_warn(f"delete_recordings_by_stream error: {e}")
+        return {"code": -1, "msg": str(e)}
+
+
+@app.post(
+    "/index/pyapi/recordings/delete_day",
+    tags=["录像管理"],
+    summary="删除指定流某天的全部录像记录及文件",
+)
+async def delete_recordings_by_day(request: Request):
+    try:
+        body = await request.body()
+        data = json.loads(body.decode("utf-8")) if body else {}
+        vhost  = data.get("vhost",  "__defaultVhost__")
+        app    = data.get("app",    "")
+        stream = data.get("stream", "")
+        date   = data.get("date",   "")
+        if not app or not stream or not date:
+            return {"code": -1, "msg": "app、stream 和 date 不能为空"}
+        count = db.delete_recordings_by_stream_date(vhost, app, stream, date)
+        return {"code": 0, "msg": f"已删除 {count} 条录像"}
+    except Exception as e:
+        mk_logger.log_warn(f"delete_recordings_by_day error: {e}")
+        return {"code": -1, "msg": str(e)}
+
+
 @app.get(
     "/index/pyapi/recordings/file",
     tags=["录像管理"],

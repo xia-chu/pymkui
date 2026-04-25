@@ -377,6 +377,58 @@ class Database:
             mk_logger.log_warn(f"get_recording_by_id error: {e}")
             return None
 
+    def delete_recordings_by_stream(self, vhost: str, app: str, stream: str) -> int:
+        """删除指定流的全部录像记录，返回删除条数"""
+        try:
+            cur = self._cursor()
+            cur.execute(
+                "SELECT id, file_path FROM recordings WHERE vhost=? AND app=? AND stream=?",
+                (vhost, app, stream)
+            )
+            rows = cur.fetchall()
+            for r in rows:
+                fp = r["file_path"] if "file_path" in r.keys() else None
+                if fp and os.path.isfile(fp):
+                    try:
+                        os.remove(fp)
+                    except Exception:
+                        pass
+            cur.execute(
+                "DELETE FROM recordings WHERE vhost=? AND app=? AND stream=?",
+                (vhost, app, stream)
+            )
+            self.connection.commit()
+            return len(rows)
+        except Exception as e:
+            mk_logger.log_warn(f"delete_recordings_by_stream error: {e}")
+            return 0
+
+    def delete_recordings_by_stream_date(self, vhost: str, app: str, stream: str, date: str) -> int:
+        """删除指定流某天的全部录像记录（date: YYYY-MM-DD），返回删除条数"""
+        try:
+            cur = self._cursor()
+            cur.execute(
+                "SELECT id, file_path FROM recordings WHERE vhost=? AND app=? AND stream=? AND substr(created_at,1,10)=?",
+                (vhost, app, stream, date)
+            )
+            rows = cur.fetchall()
+            for r in rows:
+                fp = r["file_path"] if "file_path" in r.keys() else None
+                if fp and os.path.isfile(fp):
+                    try:
+                        os.remove(fp)
+                    except Exception:
+                        pass
+            cur.execute(
+                "DELETE FROM recordings WHERE vhost=? AND app=? AND stream=? AND substr(created_at,1,10)=?",
+                (vhost, app, stream, date)
+            )
+            self.connection.commit()
+            return len(rows)
+        except Exception as e:
+            mk_logger.log_warn(f"delete_recordings_by_stream_date error: {e}")
+            return 0
+
     def get_recording_dates(self, year: int, month: int,
                             app: str = "", stream: str = "", vhost: str = "") -> list:
         """返回指定年月内有录像的日期列表（YYYY-MM-DD 字符串列表）"""
