@@ -20,7 +20,7 @@ class HttpAccessFrontend(PluginBase):
     version = "1.0.0"
     description = "HTTP 访问控制，限制只允许访问 frontend 目录。默认启用，不建议禁用。"
     type = "on_http_access"
-    exclusive = True
+    interruptible = True
 
     def run(self, **kwargs) -> bool:
         file_path = kwargs.get("file_path", "")

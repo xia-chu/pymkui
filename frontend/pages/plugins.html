@@ -89,6 +89,12 @@
                 绑定插件
                 <span class="text-white/30 font-normal normal-case ml-1">（仅显示类型匹配的插件，拖拽可排序；点击⚙配置参数）</span>
             </label>
+            <div class="text-[11px] text-white/30 mb-2 px-1 leading-relaxed">
+                <i class="fa fa-info-circle mr-1"></i>
+                列表越靠上优先级越高。
+                <span class="text-red-400">拦截型</span>插件 run() 返回 True 后终止后续插件；
+                <span class="text-green-400">监听型</span>插件无论返回什么均继续执行后续插件。
+            </div>
             <div class="mb-2">
                 <div class="text-white/40 text-xs mb-1 px-1">▸ 已绑定（拖拽排序）</div>
                 <div id="selectedPlugins"

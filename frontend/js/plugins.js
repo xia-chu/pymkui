@@ -58,16 +58,16 @@ function renderPluginList() {
     }
 
     container.innerHTML = _allPlugins.map(p => {
-        const exclusiveBadge = p.exclusive
-            ? `<span class="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 ml-1 font-mono">独占</span>`
-            : `<span class="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 ml-1 font-mono">监听</span>`;
+        const typeBadge = p.interruptible
+            ? `<span class="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 ml-1 font-mono">拦截型</span>`
+            : `<span class="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 ml-1 font-mono">监听型</span>`;
         return `
         <div class="bg-white/5 border border-white/10 rounded-xl p-4 hover:border-primary/50 transition-colors">
             <div class="flex items-start justify-between mb-2 gap-2 flex-wrap">
                 <span class="font-bold text-white truncate">${escHtml(p.name)}</span>
                 <div class="flex items-center gap-1 shrink-0">
                     <span class="text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary font-mono">${escHtml(p.type)}</span>
-                    ${exclusiveBadge}
+                    ${typeBadge}
                 </div>
             </div>
             <p class="text-white/50 text-sm mb-2 line-clamp-2">${escHtml(p.description)}</p>
@@ -106,10 +106,10 @@ function renderEventBindings() {
         const pills = hasBind
             ? bindings.map(b => {
                 const plugin = _allPlugins.find(p => p.name === b.plugin_name);
-                const exclusiveTag = plugin
-                    ? (plugin.exclusive
-                        ? `<i class="fa fa-lock text-red-400 ml-1 text-[10px]" title="独占型"></i>`
-                        : `<i class="fa fa-eye text-green-400 ml-1 text-[10px]" title="监听型"></i>`)
+                const typeTag = plugin
+                    ? (plugin.interruptible
+                        ? `<i class="fa fa-bolt text-red-400 ml-1 text-[10px]" title="拦截型：消费后终止后续插件"></i>`
+                        : `<i class="fa fa-eye text-green-400 ml-1 text-[10px]" title="监听型：不阻断后续插件"></i>`)
                     : '';
                 const hasParams = b.params && Object.keys(b.params).length > 0;
                 const paramTag  = hasParams
@@ -117,7 +117,7 @@ function renderEventBindings() {
                     : '';
                 const enabledCls = b.enabled ? 'bg-primary/20 text-primary' : 'bg-white/10 text-white/40 line-through';
                 return `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-mono mr-1 mb-1 ${enabledCls}">
-                    ${escHtml(b.plugin_name)}${exclusiveTag}${paramTag}
+                    ${escHtml(b.plugin_name)}${typeTag}${paramTag}
                 </span>`;
               }).join('')
             : `<span class="text-white/30 text-sm italic">未绑定</span>`;
@@ -204,9 +204,9 @@ function renderDragList(containerId, plugins, showParamsBtn) {
         return;
     }
     el.innerHTML = plugins.map(p => {
-        const exclusiveBadge = p.exclusive !== undefined
-            ? (p.exclusive
-                ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">独占</span>`
+        const typeBadge = p.interruptible !== undefined
+            ? (p.interruptible
+                ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">拦截</span>`
                 : `<span class="text-[10px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">监听</span>`)
             : '';
         const paramsBtn = showParamsBtn
@@ -222,13 +222,13 @@ function renderDragList(containerId, plugins, showParamsBtn) {
             draggable="true"
             data-plugin-name="${escHtml(p.name)}"
             data-plugin-type="${escHtml(p.type)}"
-            data-plugin-exclusive="${p.exclusive ? 'true' : 'false'}"
+            data-plugin-interruptible="${p.interruptible ? 'true' : 'false'}"
             ondragstart="dragStart(event)"
             ondragend="dragEnd(event)"
             ondblclick="togglePluginBinding(this)">
             <i class="fa fa-grip-vertical text-white/30 text-xs shrink-0"></i>
             <span class="font-mono text-sm text-white font-semibold">${escHtml(p.name)}</span>
-            ${exclusiveBadge}
+            ${typeBadge}
             <span class="text-white/40 text-xs truncate max-w-[140px]">${escHtml(p.description)}</span>
             ${paramsBtn}
         </div>`;
@@ -257,36 +257,8 @@ function togglePluginBinding(el) {
     }
 }
 
-// ── 将插件元素加入"已绑定"列表（含独占清场逻辑）─────────────────────
+// ── 将插件元素加入"已绑定"列表 ──────────────────────────────────────
 function _addToSelected(el, selectedContainer) {
-    const isExclusive = el.dataset.pluginExclusive === 'true';
-    const available   = document.getElementById('availablePlugins');
-
-    if (isExclusive) {
-        // 独占插件：将已绑定列表中其余插件全部移回未绑定
-        const existing = Array.from(selectedContainer.querySelectorAll('[data-plugin-name]'));
-        existing.forEach(item => {
-            selectedContainer.removeChild(item);
-            const btn = item.querySelector('button[data-params-btn]');
-            if (btn) btn.remove();
-            const ph = available.querySelector('.pointer-events-none');
-            if (ph) ph.remove();
-            available.appendChild(item);
-        });
-    } else {
-        // 非独占插件：若已绑定列表中存在独占插件，将其移回未绑定
-        const exclusiveEl = selectedContainer.querySelector('[data-plugin-exclusive="true"]');
-        if (exclusiveEl) {
-            selectedContainer.removeChild(exclusiveEl);
-            const btn = exclusiveEl.querySelector('button[data-params-btn]');
-            if (btn) btn.remove();
-            const ph = available.querySelector('.pointer-events-none');
-            if (ph) ph.remove();
-            available.appendChild(exclusiveEl);
-            _refreshEmptyHint(selectedContainer);
-        }
-    }
-
     // 清除占位提示
     const placeholder = selectedContainer.querySelector('.pointer-events-none');
     if (placeholder) placeholder.remove();
@@ -305,7 +277,7 @@ function _addToSelected(el, selectedContainer) {
     }
 
     selectedContainer.appendChild(el);
-    _refreshEmptyHint(available);
+    _refreshEmptyHint(document.getElementById('availablePlugins'));
 }
 
 // ── 拖拽排序 ──────────────────────────────────────────────────────────
@@ -353,6 +325,8 @@ function dropPlugin(e, targetArea) {
     }
 }
 function _refreshEmptyHint(container) {
+    // 先清除已有的占位提示，避免重复追加
+    container.querySelectorAll('.pointer-events-none').forEach(el => el.remove());
     const items = container.querySelectorAll('[data-plugin-name]');
     if (!items.length) {
         const hint     = document.createElement('div');

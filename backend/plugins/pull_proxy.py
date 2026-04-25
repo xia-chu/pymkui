@@ -21,7 +21,7 @@ class PullProxyOnDemand(PluginBase):
     version = "1.0.0"
     description = "按需拉流插件，流不存在时自动触发拉流代理（on_demand=1）。默认启用，不建议禁用。"
     type = "on_stream_not_found"
-    exclusive = True
+    interruptible = True
 
     def run(self, **kwargs) -> bool:
         from py_http_api import db
@@ -93,7 +93,7 @@ class PullProxyFailover(PluginBase):
     version = "1.0.0"
     description = "拉流代理多地址故障转移插件，拉流失败时自动切换备用地址。默认启用，不建议禁用。"
     type = "on_player_proxy_failed"
-    exclusive = True
+    interruptible = True
 
     def run(self, **kwargs) -> bool:
         from py_http_api import db
@@ -165,7 +165,7 @@ class PullProxyRestore(PluginBase):
     version = "1.0.0"
     description = "启动时自动恢复非按需拉流代理。默认启用，不建议禁用。"
     type = "on_start"
-    exclusive = False
+    interruptible = False
 
     def run(self, **kwargs) -> bool:
         import mk_plugin as _mk

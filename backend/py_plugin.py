@@ -34,11 +34,11 @@ class PluginBase:
     description = "Base plugin class"
     # type 必须是 SUPPORTED_EVENTS 中的一个
     type = "base"
-    # exclusive=True  → 独占型：run() 返回 True 后立即停止后续插件派发
-    #                   适用于鉴权等需要独占事件控制权的场景
-    # exclusive=False → 监听型：无论 run() 返回什么，都继续执行后续插件
-    #                   适用于日志记录、消息推送、写库等不影响业务流程的旁路处理
-    exclusive = True
+    # interruptible=True  → 拦截型：run() 返回 True 后立即停止后续插件派发
+    #                        适用于鉴权等需要独占事件控制权的场景（如 TokenAuth 会调用 invoker）
+    # interruptible=False → 监听型：无论 run() 返回什么，都继续执行后续插件
+    #                        适用于日志记录、写库等不影响业务流程的旁路处理
+    interruptible = True
     # abstract=True 表示该类是中间抽象基类，不会被注册为实际插件。
     # 插件加载器会跳过所有 abstract=True 的类，只注册 abstract=False 的具体插件。
     abstract = False
@@ -149,7 +149,7 @@ class PluginRegistry:
                     "version": p.version,
                     "description": p.description,
                     "type": p.type,
-                    "exclusive": p.exclusive,
+                    "interruptible": p.interruptible,
                     "params_schema": schema,
                 })
             return result
@@ -231,16 +231,16 @@ class PluginRegistry:
 
     def dispatch(self, event_type: str, **kwargs) -> bool:
         """
-        将事件分发给所有绑定到 event_type 且已启用的插件。
+        将事件分发给所有绑定到 event_type 且已启用的插件，按列表顺序（优先级从高到低）执行。
 
-        独占型插件（exclusive=True）：
+        拦截型插件（interruptible=True）：
           run() 返回 True → 立即停止后续所有插件并返回 True（接管事件）
           run() 返回 False → 继续执行下一个插件
 
-        监听型插件（exclusive=False）：
+        监听型插件（interruptible=False）：
           无论 run() 返回什么 → 始终继续执行后续插件，本插件不影响最终接管结果
 
-        全部插件执行完后若没有任何独占插件接管 → 返回 False
+        全部插件执行完后若没有任何拦截型插件接管 → 返回 False
         """
         with self._lock:
             items = list(self._bindings.get(event_type, []))
@@ -255,13 +255,13 @@ class PluginRegistry:
                 continue
             try:
                 result = plugin.run(**kwargs, binding_params=params)
-                if plugin.exclusive:
+                if plugin.interruptible:
                     if result:
                         mk_logger.log_info(
-                            f"[PluginRegistry] 事件 {event_type} 被独占插件 [{name}] 接管"
+                            f"[PluginRegistry] 事件 {event_type} 被拦截型插件 [{name}] 接管"
                         )
                         intercepted = True
-                        break   # 独占接管，终止后续
+                        break   # 拦截接管，终止后续
                 else:
                     mk_logger.log_info(
                         f"[PluginRegistry] 监听插件 [{name}] 处理 {event_type} 完成"

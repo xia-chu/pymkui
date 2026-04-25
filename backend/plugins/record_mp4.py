@@ -12,7 +12,7 @@ class RecordMp4Logger(PluginBase):
     version     = "1.0.0"
     description = "MP4 录像完成后自动将录像信息写入数据库，供录像管理页面查询。"
     type        = "on_record_mp4"
-    exclusive   = False
+    interruptible = False  # 监听型：写库后继续执行其他插件
 
     def run(self, **kwargs) -> bool:
         info = kwargs.get("info", {})

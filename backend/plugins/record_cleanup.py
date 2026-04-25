@@ -117,7 +117,7 @@ class RecordCleanup(PluginBase):
         "按流统计总大小和录像日龄，超限时从最旧录像开始删除文件及数据库记录。"
     )
     type        = "on_start"
-    exclusive   = False
+    interruptible = False  # 监听型：清理完成后不阻断其他插件
 
     def params(self) -> dict:
         return {

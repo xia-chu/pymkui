@@ -22,8 +22,11 @@ class TokenAuthBase(PluginBase):
     """
     Token 鉴权基类。
     子类只需声明 name/description/type，以及实现 _allow(invoker) / _deny(invoker) 两个方法。
+    鉴权插件会调用 invoker（publish_auth_invoker_do / play_auth_invoker_do），
+    消费事件后不允许其他插件继续处理，因此 interruptible=True。
     """
     abstract = True   # 中间基类，不注册为实际插件
+    interruptible = True  # 鉴权插件：消费后终止后续插件
     _token: dict = {}
 
     # ── 参数 schema ──────────────────────────────────────────────────────────
@@ -140,7 +143,7 @@ class PlayTokenAuth(TokenAuthBase):
     version     = "1.0.0"
     description = "播放鉴权插件，鉴权失败后会拒绝播放请求。"
     type        = "on_play"
-    exclusive   = True
+    interruptible = True
     abstract    = False
 
     _token: dict = {}   # 与 PublishTokenAuth 各自独立
@@ -159,7 +162,7 @@ class PublishTokenAuth(TokenAuthBase):
     version     = "1.0.0"
     description = "推流鉴权插件，鉴权失败后会拒绝推流请求。"
     type        = "on_publish"
-    exclusive   = True
+    interruptible = True
     abstract    = False
 
     _token: dict = {}   # 与 PlayTokenAuth 各自独立
