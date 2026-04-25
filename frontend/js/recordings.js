@@ -548,17 +548,142 @@ function clearRecDate() {
     loadRecordingList();
 }
 
-// ── 播放全天录像（顺序播放 MP4） ──────────────────────────────────────
+// ── 全天播放状态 ──────────────────────────────────────────────────────
+const _dp = {
+    list: [],       // 录像列表
+    offsets: [],    // 各段累积起始秒 [0, dur0, dur0+dur1, ...]
+    total: 0,       // 总时长（秒）
+    idx: 0,         // 当前段
+    label: '',      // 标题标识
+    raf: null,      // requestAnimationFrame id
+    seekingTo: null,// 拖拽/seek 中的目标全局秒（用于 tick 显示正确位置）
+    speed: 1,       // 播放倍速
+};
+
+function _dpUrl(id) { return `/index/pyapi/recordings/file?id=${id}&disposition=inline`; }
+
+function _dpFmtTime(s) {
+    s = Math.floor(s);
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    return h > 0
+        ? `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`
+        : `${m}:${String(sec).padStart(2,'0')}`;
+}
+
+// 根据全局秒数找到对应段 idx 和段内偏移
+function _dpSegAt(globalSec) {
+    const offsets = _dp.offsets;
+    let idx = 0;
+    for (let i = offsets.length - 1; i >= 0; i--) {
+        if (globalSec >= offsets[i]) { idx = i; break; }
+    }
+    const offset = globalSec - offsets[idx];
+    return { idx, offset };
+}
+
+// 更新自定义进度条
+function _dpTick() {
+    const videoA = document.getElementById('_dpVideoA');
+    if (!videoA) return;
+    // seeking 中用手动记录的值，不读 currentTime（load 中 currentTime 可能是旧值）
+    const globalSec = _dp.seekingTo != null
+        ? _dp.seekingTo
+        : _dp.offsets[_dp.idx] + (isNaN(videoA.currentTime) ? 0 : videoA.currentTime);
+    const pct = _dp.total > 0 ? Math.min(globalSec / _dp.total, 1) : 0;
+
+    const bar = document.getElementById('_dpBar');
+    const timeCur = document.getElementById('_dpTimeCur');
+    const timeTotal = document.getElementById('_dpTimeTotal');
+    if (bar) bar.style.width = (pct * 100).toFixed(2) + '%';
+    if (timeCur) timeCur.textContent = _dpFmtTime(globalSec);
+    if (timeTotal) timeTotal.textContent = _dpFmtTime(_dp.total);
+
+    _dp.raf = requestAnimationFrame(_dpTick);
+}
+
+// 切换到指定段，从 offsetSec 开始播放
+function _dpGoTo(idx, offsetSec) {
+    if (idx >= _dp.list.length) {
+        const titleEl = document.getElementById('_dpTitle');
+        if (titleEl) titleEl.textContent = _dp.label + ' · 播放完毕';
+        _dp.seekingTo = null;
+        return;
+    }
+    _dp.idx = idx;
+    const rec = _dp.list[idx];
+    const url = _dpUrl(rec.id);
+
+    const titleEl = document.getElementById('_dpTitle');
+    if (titleEl) titleEl.textContent = `${_dp.label} (${idx + 1}/${_dp.list.length})`;
+
+    const videoA = document.getElementById('_dpVideoA');
+    const videoB = document.getElementById('_dpVideoB');
+
+    videoA.onended = null; // 先解绑，防止 load 触发旧 ended 回调
+
+    // 记录目标全局时间（用于 tick 显示正确位置）
+    _dp.seekingTo = _dp.offsets[idx] + offsetSec;
+
+    videoA.src = url;
+    videoA.load();
+
+    videoA.addEventListener('loadedmetadata', function onMeta() {
+        videoA.removeEventListener('loadedmetadata', onMeta);
+        if (offsetSec > 0) videoA.currentTime = offsetSec;
+        if (_dp.speed && _dp.speed !== 1) videoA.playbackRate = _dp.speed;
+        _dp.seekingTo = null; // 可以开始正常 tick 了
+        videoA.play().catch(() => {});
+    }, { once: true });
+
+    // 预加载下一段
+    if (videoB && idx + 1 < _dp.list.length) {
+        videoB.src = _dpUrl(_dp.list[idx + 1].id);
+        videoB.preload = 'auto';
+        videoB.load();
+    } else if (videoB) {
+        videoB.src = '';
+    }
+
+    // 播完自动切下一段
+    videoA.onended = () => {
+        if (_dp.idx !== idx) return;
+        _dpGoTo(idx + 1, 0);
+    };
+}
+
+// 根据鼠标位置计算全局秒数
+function _dpPctToSec(e) {
+    const track = document.getElementById('_dpTrack');
+    if (!track || _dp.total === 0) return null;
+    const rect = track.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    return pct * _dp.total;
+}
+
+// 只更新进度条视觉（拖拽中预览用，不触发 load）
+function _dpPreviewBar(globalSec) {
+    const pct = _dp.total > 0 ? Math.min(globalSec / _dp.total, 1) : 0;
+    const bar = document.getElementById('_dpBar');
+    const timeCur = document.getElementById('_dpTimeCur');
+    if (bar) bar.style.width = (pct * 100).toFixed(2) + '%';
+    if (timeCur) timeCur.textContent = _dpFmtTime(globalSec);
+}
+
+// 进度条点击 seek（非拖拽）
+function _dpSeek(e) {
+    // 如果是拖拽结束触发的 click 事件，忽略（mouseup 已处理）
+    if (window._dpJustDragged) { window._dpJustDragged = false; return; }
+    const sec = _dpPctToSec(e);
+    if (sec == null) return;
+    const { idx, offset } = _dpSegAt(sec);
+    _dpGoTo(idx, offset);
+}
+
+// ── 播放全天录像 ──────────────────────────────────────────────────────
 function playDayRecordings() {
-    if (!_recSelectedStream) {
-        showToast('请先选择左侧流', 'error');
-        return;
-    }
+    if (!_recSelectedStream) { showToast('请先选择左侧流', 'error'); return; }
     const date = _recSelectedDate;
-    if (!date) {
-        showToast('请先选择日期', 'error');
-        return;
-    }
+    if (!date) { showToast('请先选择日期', 'error'); return; }
     const { vhost, app, stream } = _recSelectedStream;
     const params = new URLSearchParams({ vhost, app, stream, date });
 
@@ -566,102 +691,192 @@ function playDayRecordings() {
         .then(r => r.json())
         .then(res => {
             if (res.code !== 0 || !res.data || res.data.length === 0) {
-                showToast(res.msg || '该流当天暂无录像', 'error');
-                return;
+                showToast(res.msg || '该流当天暂无录像', 'error'); return;
             }
-            _playDayList(res.data, 0, app, stream, date);
+            _startDayPlayer(res.data, `全天 · ${app}/${stream} · ${date}`);
         })
         .catch(() => showToast('获取全天录像列表失败', 'error'));
 }
 
-// 顺序播放录像列表
-function _playDayList(list, idx, app, stream, date) {
-    if (idx >= list.length) return;
-    const rec = list[idx];
-    const url = `/index/pyapi/recordings/file?id=${rec.id}&disposition=inline`;
+function _startDayPlayer(list, label) {
+    // 计算累积偏移
+    const offsets = [0];
+    for (let i = 0; i < list.length - 1; i++) {
+        offsets.push(offsets[i] + (list[i].time_len || 0));
+    }
+    const total = offsets[offsets.length - 1] + (list[list.length - 1].time_len || 0);
 
-    // 销毁旧的 hls 实例（如有）
-    if (window._recHls) { window._recHls.destroy(); window._recHls = null; }
+    _dp.list = list; _dp.offsets = offsets; _dp.total = total; _dp.idx = 0; _dp.label = label; _dp.seekingTo = null; _dp.speed = 1;
 
+    // 构建/复用弹窗
     let modal = document.getElementById('recPlayerModal');
-    if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'recPlayerModal';
-        modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm';
-        modal.innerHTML = `
-            <div class="relative bg-gray-900 rounded-2xl shadow-2xl overflow-hidden w-full max-w-3xl mx-4">
-                <div class="flex items-center justify-between px-5 py-3 border-b border-white/10">
-                    <span class="text-white font-semibold text-sm" id="recPlayerTitle">录像播放</span>
+    if (modal) modal.remove();
+
+    modal = document.createElement('div');
+    modal.id = 'recPlayerModal';
+    modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm';
+    modal.innerHTML = `
+        <div class="relative bg-gray-900 rounded-2xl shadow-2xl overflow-hidden w-full max-w-3xl mx-4" id="_dpPanel" onclick="event.stopPropagation()">
+            <div class="flex items-center justify-between px-5 py-3 border-b border-white/10">
+                <span class="text-white font-semibold text-sm" id="_dpTitle">${label}</span>
+                <div class="flex items-center gap-2">
+                    <!-- 倍速选择 -->
+                    <select id="_dpSpeed" onchange="_dpSetSpeed(this.value)"
+                        class="bg-gray-800 text-white/80 text-xs rounded px-2 py-1 border border-white/10 outline-none cursor-pointer">
+                        <option value="0.5">0.5×</option>
+                        <option value="1" selected>1×</option>
+                        <option value="1.5">1.5×</option>
+                        <option value="2">2×</option>
+                        <option value="4">4×</option>
+                    </select>
+                    <!-- 全屏 -->
+                    <button onclick="_dpToggleFullscreen()" title="全屏"
+                        class="text-white/60 hover:text-white transition px-1 text-base leading-none">⛶</button>
                     <button onclick="closeRecPlayer()" class="text-white/50 hover:text-white transition text-lg leading-none">&times;</button>
                 </div>
-                <div class="p-4 bg-black">
-                    <video id="recPlayerVideo" controls autoplay
-                        class="w-full rounded-lg max-h-[70vh] bg-black outline-none"
-                        style="min-height:200px;">
-                        您的浏览器不支持 video 标签。
-                    </video>
+            </div>
+            <div class="bg-black relative" id="_dpVideoWrap">
+                <video id="_dpVideoA" autoplay
+                    class="w-full max-h-[65vh] bg-black outline-none block"
+                    style="min-height:200px;"></video>
+                <video id="_dpVideoB" preload="auto" style="display:none"></video>
+            </div>
+            <!-- 自定义进度条 -->
+            <div class="px-4 pt-2 pb-3 bg-gray-900 select-none" id="_dpControlBar">
+                <div id="_dpTrack" class="relative h-2 bg-white/20 rounded-full cursor-pointer"
+                    style="user-select:none"
+                    onmousedown="_dpSeekStart(event)"
+                    onclick="_dpSeek(event)">
+                    <div id="_dpBar" class="absolute left-0 top-0 h-2 bg-blue-500 rounded-full transition-none" style="width:0%"></div>
                 </div>
-            </div>`;
-        modal.addEventListener('click', e => { if (e.target === modal) closeRecPlayer(); });
-        document.body.appendChild(modal);
+                <div class="flex justify-between text-xs text-white/50 mt-1">
+                    <span id="_dpTimeCur">0:00</span>
+                    <span id="_dpTimeTotal">${_dpFmtTime(total)}</span>
+                </div>
+            </div>
+        </div>`;
+    modal.addEventListener('click', e => { if (e.target === modal) closeRecPlayer(); });
+    document.body.appendChild(modal);
+
+    // 拖拽 seek 支持：拖拽中只预览，mouseup 才真正跳转
+    window._dpDragging = false;
+    window._dpJustDragged = false;
+    window._dpSeekStart = function(e) {
+        window._dpDragging = true;
+        // 拖拽期间暂停 tick（进度条由拖拽预览接管）
+        if (_dp.raf) { cancelAnimationFrame(_dp.raf); _dp.raf = null; }
+        _dpPreviewBar(_dpPctToSec(e) || 0);
+
+        const onMove = ev => {
+            if (!window._dpDragging) return;
+            const sec = _dpPctToSec(ev);
+            if (sec != null) _dpPreviewBar(sec);
+        };
+        const onUp = ev => {
+            window._dpDragging = false;
+            window._dpJustDragged = true;
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+            const sec = _dpPctToSec(ev);
+            if (sec != null) {
+                const { idx, offset } = _dpSegAt(sec);
+                _dpGoTo(idx, offset);
+            }
+            // 恢复 tick
+            if (!_dp.raf) _dp.raf = requestAnimationFrame(_dpTick);
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    };
+
+    if (_dp.raf) cancelAnimationFrame(_dp.raf);
+    _dp.raf = requestAnimationFrame(_dpTick);
+
+    // 全屏变化时，同步倍速并让控制栏覆盖在全屏视频上
+    document.addEventListener('fullscreenchange', _dpOnFullscreenChange);
+
+    _dpGoTo(0, 0);
+}
+
+// 设置倍速（切换 src 后也需重设，在 loadedmetadata 中处理）
+function _dpSetSpeed(val) {
+    _dp.speed = parseFloat(val) || 1;
+    const v = document.getElementById('_dpVideoA');
+    if (v) v.playbackRate = _dp.speed;
+}
+
+// 全屏切换
+function _dpToggleFullscreen() {
+    const panel = document.getElementById('_dpPanel');
+    if (!panel) return;
+    if (!document.fullscreenElement) {
+        panel.requestFullscreen().catch(() => {});
+    } else {
+        document.exitFullscreen().catch(() => {});
     }
+}
 
-    const titleEl = document.getElementById('recPlayerTitle');
-    if (titleEl) titleEl.textContent = `全天播放 · ${app}/${stream} · ${date} (${idx + 1}/${list.length})`;
-
-    const video = document.getElementById('recPlayerVideo');
-    video.src = url;
-    modal.classList.remove('hidden');
-    video.load();
-    video.play().catch(() => {});
-
-    // 播放结束后自动切到下一条
-    video.onended = () => _playDayList(list, idx + 1, app, stream, date);
+// 全屏变化回调：全屏时让控制栏固定在底部
+function _dpOnFullscreenChange() {
+    const panel = document.getElementById('_dpPanel');
+    const videoWrap = document.getElementById('_dpVideoWrap');
+    const ctrl = document.getElementById('_dpControlBar');
+    if (!panel) return;
+    if (document.fullscreenElement === panel) {
+        // 进入全屏：视频撑满，控制栏绝对定位在底部
+        panel.style.cssText = 'position:relative;width:100%;height:100%;max-width:none;border-radius:0;display:flex;flex-direction:column;';
+        if (videoWrap) videoWrap.style.cssText = 'flex:1;overflow:hidden;';
+        const v = document.getElementById('_dpVideoA');
+        if (v) v.style.cssText = 'width:100%;height:100%;max-height:none;object-fit:contain;';
+        if (ctrl) ctrl.style.cssText = 'flex-shrink:0;';
+    } else {
+        // 退出全屏：恢复样式
+        panel.style.cssText = '';
+        if (videoWrap) videoWrap.style.cssText = '';
+        const v = document.getElementById('_dpVideoA');
+        if (v) v.style.cssText = 'min-height:200px;';
+        if (ctrl) ctrl.style.cssText = '';
+    }
 }
 
 // ── 播放单条录像 ──────────────────────────────────────────────────────
 function playRecording(id) {
+    closeRecPlayer(); // 先关闭旧弹窗
     const url = `/index/pyapi/recordings/file?id=${id}&disposition=inline`;
-    // 销毁可能存在的 hls 实例
-    if (window._recHls) { window._recHls.destroy(); window._recHls = null; }
-    // 复用或新建模态框
-    let modal = document.getElementById('recPlayerModal');
-    if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'recPlayerModal';
-        modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm';
-        modal.innerHTML = `
-            <div class="relative bg-gray-900 rounded-2xl shadow-2xl overflow-hidden w-full max-w-3xl mx-4">
-                <div class="flex items-center justify-between px-5 py-3 border-b border-white/10">
-                    <span class="text-white font-semibold text-sm" id="recPlayerTitle">录像播放</span>
-                    <button onclick="closeRecPlayer()" class="text-white/50 hover:text-white transition text-lg leading-none">&times;</button>
-                </div>
-                <div class="p-4 bg-black">
-                    <video id="recPlayerVideo" controls autoplay
-                        class="w-full rounded-lg max-h-[70vh] bg-black outline-none"
-                        style="min-height:200px;">
-                        您的浏览器不支持 video 标签。
-                    </video>
-                </div>
-            </div>`;
-        modal.addEventListener('click', e => { if (e.target === modal) closeRecPlayer(); });
-        document.body.appendChild(modal);
-    }
-    const titleEl = document.getElementById('recPlayerTitle');
-    if (titleEl) titleEl.textContent = '录像播放';
+    const modal = document.createElement('div');
+    modal.id = 'recPlayerModal';
+    modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm';
+    modal.innerHTML = `
+        <div class="relative bg-gray-900 rounded-2xl shadow-2xl overflow-hidden w-full max-w-3xl mx-4" onclick="event.stopPropagation()">
+            <div class="flex items-center justify-between px-5 py-3 border-b border-white/10">
+                <span class="text-white font-semibold text-sm">录像播放</span>
+                <button onclick="closeRecPlayer()" class="text-white/50 hover:text-white transition text-lg leading-none">&times;</button>
+            </div>
+            <div class="p-4 bg-black">
+                <video id="recPlayerVideo" controls autoplay
+                    class="w-full rounded-lg max-h-[70vh] bg-black outline-none"
+                    style="min-height:200px;"></video>
+            </div>
+        </div>`;
+    modal.addEventListener('click', e => { if (e.target === modal) closeRecPlayer(); });
+    document.body.appendChild(modal);
     const video = document.getElementById('recPlayerVideo');
     video.src = url;
     video.load();
     video.play().catch(() => {});
-    modal.classList.remove('hidden');
 }
 
 function closeRecPlayer() {
+    if (_dp.raf) { cancelAnimationFrame(_dp.raf); _dp.raf = null; }
+    document.removeEventListener('fullscreenchange', _dpOnFullscreenChange);
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     const modal = document.getElementById('recPlayerModal');
     if (modal) {
-        const video = document.getElementById('recPlayerVideo');
-        if (video) { video.pause(); video.src = ''; }
+        ['_dpVideoA', '_dpVideoB', 'recPlayerVideo'].forEach(id => {
+            const v = document.getElementById(id);
+            if (v) { v.pause(); v.onended = null; v.src = ''; }
+        });
         if (window._recHls) { window._recHls.destroy(); window._recHls = null; }
-        modal.classList.add('hidden');
+        modal.remove();
     }
 }
