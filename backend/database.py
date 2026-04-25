@@ -23,9 +23,14 @@ class Database:
         self.cursor = self.connection.cursor()
         # SQLite 默认不开启外键约束，每次连接后需手动启用
         self.cursor.execute("PRAGMA foreign_keys = ON")
-        
+
         self._create_tables()
-        self._migrate_plugin_bindings_unique()
+
+    def _cursor(self) -> sqlite3.Cursor:
+        """每次调用返回一个新的独立游标，避免递归使用同一游标导致报错"""
+        cur = self.connection.cursor()
+        cur.execute("PRAGMA foreign_keys = ON")
+        return cur
     
     def _create_tables(self):
         """Create necessary tables"""
@@ -140,59 +145,8 @@ class Database:
         self.cursor.execute("SELECT COUNT(*) FROM plugin_bindings")
         if self.cursor.fetchone()[0] == 0:
             self._init_default_plugin_bindings()
-        else:
-            # 补插可能缺失的新默认绑定（兼容老数据库）
-            self._ensure_default_plugin_bindings()
 
         mk_logger.log_info(f"Database initialized at {self.db_path}")
-
-    def _ensure_default_plugin_bindings(self):
-        """对老数据库补插新增的默认绑定（INSERT OR IGNORE，不覆盖已有记录）"""
-        new_defaults = [
-            ("on_start", "record_cleanup", '{}', 10, 1),
-        ]
-        for event_type, plugin_name, params, priority, enabled in new_defaults:
-            self.cursor.execute(
-                """
-                INSERT OR IGNORE INTO plugin_bindings
-                    (event_type, plugin_name, params, priority, enabled)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (event_type, plugin_name, params, priority, enabled),
-            )
-        self.connection.commit()
-
-    def _migrate_plugin_bindings_unique(self):
-        """
-        如果 plugin_bindings 表存在 UNIQUE(event_type, plugin_name) 约束，
-        则重建表去掉该约束，以支持同一插件多次绑定（multi_binding）。
-        """
-        try:
-            row = self.cursor.execute(
-                "SELECT sql FROM sqlite_master WHERE type='table' AND name='plugin_bindings'"
-            ).fetchone()
-            if row and 'UNIQUE' in (row[0] or '').upper():
-                mk_logger.log_info("迁移 plugin_bindings 表：移除 UNIQUE(event_type, plugin_name) 约束")
-                self.cursor.executescript('''
-                    BEGIN;
-                    ALTER TABLE plugin_bindings RENAME TO _plugin_bindings_old;
-                    CREATE TABLE plugin_bindings (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        event_type TEXT NOT NULL,
-                        plugin_name TEXT NOT NULL,
-                        params TEXT NOT NULL DEFAULT '{}',
-                        priority INTEGER NOT NULL DEFAULT 0,
-                        enabled INTEGER NOT NULL DEFAULT 1,
-                        updated_at TIMESTAMP DEFAULT current_timestamp
-                    );
-                    INSERT INTO plugin_bindings (id, event_type, plugin_name, params, priority, enabled, updated_at)
-                        SELECT id, event_type, plugin_name, params, priority, enabled, updated_at FROM _plugin_bindings_old;
-                    DROP TABLE _plugin_bindings_old;
-                    COMMIT;
-                ''')
-                mk_logger.log_info("plugin_bindings 表迁移完成")
-        except Exception as e:
-            mk_logger.log_warn(f"_migrate_plugin_bindings_unique error: {e}")
 
     def _init_default_plugin_bindings(self):
         """插入内置插件的默认绑定记录（仅首次建库、表为空时调用）"""
@@ -224,12 +178,13 @@ class Database:
     def add_proxy(self, app: str, stream: str, url: str, enabled: bool = True) -> Optional[Dict[str, Any]]:
         """Add a proxy configuration"""
         try:
-            self.cursor.execute(
+            cur = self._cursor()
+            cur.execute(
                 'INSERT INTO pull_proxies (app, stream, url, enabled) VALUES (?, ?, ?, ?)',
                 (app, stream, url, enabled)
             )
             self.connection.commit()
-            proxy_id = self.cursor.lastrowid
+            proxy_id = cur.lastrowid
             return {
                 'id': proxy_id,
                 'app': app,
@@ -246,11 +201,12 @@ class Database:
     def get_proxy(self, proxy_id: int) -> Optional[Dict[str, Any]]:
         """Get proxy configuration by ID"""
         try:
-            self.cursor.execute(
+            cur = self._cursor()
+            cur.execute(
                 'SELECT * FROM pull_proxies WHERE id = ?',
                 (proxy_id,)
             )
-            row = self.cursor.fetchone()
+            row = cur.fetchone()
             if row:
                 return dict(row)
             return None
@@ -262,16 +218,16 @@ class Database:
         """Get all proxy configurations"""
         try:
             if enabled_only:
-                self.cursor.execute(
+                cur.execute(
                     'SELECT * FROM pull_proxies WHERE enabled = 1 ORDER BY created_at DESC'
                 )
             else:
-                self.cursor.execute(
+                cur.execute(
                     'SELECT * FROM pull_proxies ORDER BY created_at DESC'
                 )
             
             proxies = []
-            for row in self.cursor.fetchall():
+            for row in cur.fetchall():
                 proxies.append(dict(row))
             return proxies
         except sqlite3.Error as e:
@@ -294,7 +250,7 @@ class Database:
                 
                 query = f"UPDATE pull_proxies SET {', '.join(set_clause)} WHERE id = ?"
                 values.append(proxy_id)
-                self.cursor.execute(query, values)
+                cur.execute(query, values)
                 self.connection.commit()
                 return True
             return False
@@ -305,7 +261,8 @@ class Database:
     def delete_proxy(self, proxy_id: int) -> bool:
         """Delete proxy configuration"""
         try:
-            self.cursor.execute('DELETE FROM pull_proxies WHERE id = ?', (proxy_id,))
+            cur = self._cursor()
+            cur.execute('DELETE FROM pull_proxies WHERE id = ?', (proxy_id,))
             self.connection.commit()
             return True
         except sqlite3.Error as e:
@@ -315,7 +272,8 @@ class Database:
     def add_recording(self, info: dict) -> Optional[int]:
         """写入一条 on_record_mp4 录像记录，file_path 相同则忽略"""
         try:
-            self.cursor.execute(
+            cur = self._cursor()
+            cur.execute(
                 '''INSERT OR IGNORE INTO recordings
                    (vhost, app, stream, file_name, file_path, file_size, url, start_time, time_len)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
@@ -332,7 +290,7 @@ class Database:
                 ),
             )
             self.connection.commit()
-            return self.cursor.lastrowid
+            return cur.lastrowid
         except Exception as e:
             mk_logger.log_warn(f"add_recording error: {e}")
             return None
@@ -358,11 +316,11 @@ class Database:
                 clauses.append("start_time <= ?"); params.append(end_ts)
             where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
             params += [limit, offset]
-            self.cursor.execute(
+            cur.execute(
                 f"SELECT * FROM recordings {where} ORDER BY start_time DESC LIMIT ? OFFSET ?",
                 params,
             )
-            return [dict(r) for r in self.cursor.fetchall()]
+            return [dict(r) for r in cur.fetchall()]
         except Exception as e:
             mk_logger.log_warn(f"get_recordings error: {e}")
             return []
@@ -370,10 +328,11 @@ class Database:
     def get_recording_streams(self) -> List[Dict[str, Any]]:
         """返回所有有录像的 vhost/app/stream 组合（去重）"""
         try:
-            self.cursor.execute(
+            cur = self._cursor()
+            cur.execute(
                 "SELECT DISTINCT vhost, app, stream FROM recordings ORDER BY app, stream"
             )
-            return [dict(r) for r in self.cursor.fetchall()]
+            return [dict(r) for r in cur.fetchall()]
         except Exception as e:
             mk_logger.log_warn(f"get_recording_streams error: {e}")
             return []
@@ -381,7 +340,8 @@ class Database:
     def delete_recording(self, recording_id: int) -> bool:
         """删除一条录像记录"""
         try:
-            self.cursor.execute("DELETE FROM recordings WHERE id = ?", (recording_id,))
+            cur = self._cursor()
+            cur.execute("DELETE FROM recordings WHERE id = ?", (recording_id,))
             self.connection.commit()
             return True
         except Exception as e:
@@ -391,11 +351,12 @@ class Database:
     def get_recording(self, app: str, stream: str, file_path: str) -> Optional[Dict[str, Any]]:
         """按 file_path 查询单条录像"""
         try:
-            self.cursor.execute(
+            cur = self._cursor()
+            cur.execute(
                 "SELECT * FROM recordings WHERE app = ? AND stream = ? AND file_path = ?",
                 (app, stream, file_path),
             )
-            row = self.cursor.fetchone()
+            row = cur.fetchone()
             return dict(row) if row else None
         except Exception as e:
             mk_logger.log_warn(f"get_recording error: {e}")
@@ -404,8 +365,9 @@ class Database:
     def get_recording_by_id(self, rec_id: int) -> Optional[Dict[str, Any]]:
         """按主键 id 查询单条录像"""
         try:
-            self.cursor.execute("SELECT * FROM recordings WHERE id = ?", (rec_id,))
-            row = self.cursor.fetchone()
+            cur = self._cursor()
+            cur.execute("SELECT * FROM recordings WHERE id = ?", (rec_id,))
+            row = cur.fetchone()
             return dict(row) if row else None
         except Exception as e:
             mk_logger.log_warn(f"get_recording_by_id error: {e}")
@@ -425,11 +387,11 @@ class Database:
             if stream:
                 clauses.append("stream = ?"); params.append(stream)
             where = "WHERE " + " AND ".join(clauses)
-            self.cursor.execute(
+            cur.execute(
                 f"SELECT DISTINCT substr(created_at, 1, 10) AS d FROM recordings {where} ORDER BY d",
                 params,
             )
-            return [row["d"] for row in self.cursor.fetchall()]
+            return [row["d"] for row in cur.fetchall()]
         except Exception as e:
             mk_logger.log_warn(f"get_recording_dates error: {e}")
             return []
@@ -452,9 +414,9 @@ class Database:
                     placeholders.append('?')
             
             query = f"INSERT INTO protocol_options ({', '.join(fields)}) VALUES ({', '.join(placeholders)})"
-            self.cursor.execute(query, values)
+            cur.execute(query, values)
             self.connection.commit()
-            return self.cursor.lastrowid
+            return cur.lastrowid
         except sqlite3.IntegrityError as e:
             print(f"Failed to add protocol option: {e}")
             return None
@@ -462,10 +424,11 @@ class Database:
     def get_protocol_option(self, option_id: int) -> Optional[Dict[str, Any]]:
         """Get protocol option by ID"""
         try:
-            self.cursor.execute('SELECT * FROM protocol_options WHERE id = ?', (option_id,))
-            row = self.cursor.fetchone()
+            cur = self._cursor()
+            cur.execute('SELECT * FROM protocol_options WHERE id = ?', (option_id,))
+            row = cur.fetchone()
             if row:
-                columns = [description[0] for description in self.cursor.description]
+                columns = [description[0] for description in cur.description]
                 return dict(zip(columns, row))
             return None
         except sqlite3.Error as e:
@@ -475,9 +438,10 @@ class Database:
     def get_all_protocol_options(self) -> List[Dict[str, Any]]:
         """Get all protocol options (only basic info)"""
         try:
-            self.cursor.execute('SELECT id, name, created_at FROM protocol_options ORDER BY created_at DESC')
-            rows = self.cursor.fetchall()
-            columns = [description[0] for description in self.cursor.description]
+            cur = self._cursor()
+            cur.execute('SELECT id, name, created_at FROM protocol_options ORDER BY created_at DESC')
+            rows = cur.fetchall()
+            columns = [description[0] for description in cur.description]
             return [dict(zip(columns, row)) for row in rows]
         except sqlite3.Error as e:
             print(f"Failed to get all protocol options: {e}")
@@ -504,7 +468,7 @@ class Database:
                 values.append(option_id)
                 
                 query = f"UPDATE protocol_options SET {', '.join(set_clause)} WHERE id = ?"
-                self.cursor.execute(query, values)
+                cur.execute(query, values)
                 self.connection.commit()
                 return True
             return False
@@ -515,7 +479,8 @@ class Database:
     def delete_protocol_option(self, option_id: int) -> bool:
         """Delete protocol option"""
         try:
-            self.cursor.execute('DELETE FROM protocol_options WHERE id = ?', (option_id,))
+            cur = self._cursor()
+            cur.execute('DELETE FROM protocol_options WHERE id = ?', (option_id,))
             self.connection.commit()
             return True
         except sqlite3.Error as e:
@@ -525,7 +490,8 @@ class Database:
     def add_pull_proxy(self, proxy_data: Dict[str, Any]) -> Optional[int]:
         """Add a pull proxy"""
         try:
-            self.cursor.execute(
+            cur = self._cursor()
+            cur.execute(
                 'INSERT INTO pull_proxies (vhost, app, stream, remark, custom_params, protocol_params, on_demand) VALUES (?, ?, ?, ?, ?, ?, ?)',
                 (proxy_data.get('vhost', '__defaultVhost__'),
                  proxy_data.get('app'),
@@ -536,7 +502,7 @@ class Database:
                  int(bool(proxy_data.get('on_demand', 0))))
             )
             self.connection.commit()
-            return self.cursor.lastrowid
+            return cur.lastrowid
         except sqlite3.IntegrityError as e:
             mk_logger.log_warn(f"Failed to add pull proxy: {e}")
             return None
@@ -544,10 +510,11 @@ class Database:
     def get_pull_proxy(self, proxy_id: int) -> Optional[Dict[str, Any]]:
         """Get pull proxy by ID"""
         try:
-            self.cursor.execute('SELECT * FROM pull_proxies WHERE id = ?', (proxy_id,))
-            row = self.cursor.fetchone()
+            cur = self._cursor()
+            cur.execute('SELECT * FROM pull_proxies WHERE id = ?', (proxy_id,))
+            row = cur.fetchone()
             if row:
-                columns = [description[0] for description in self.cursor.description]
+                columns = [description[0] for description in cur.description]
                 return dict(zip(columns, row))
             return None
         except sqlite3.Error as e:
@@ -557,9 +524,10 @@ class Database:
     def get_all_pull_proxies(self) -> List[Dict[str, Any]]:
         """Get all pull proxies"""
         try:
-            self.cursor.execute('SELECT * FROM pull_proxies ORDER BY created_at DESC')
-            rows = self.cursor.fetchall()
-            columns = [description[0] for description in self.cursor.description]
+            cur = self._cursor()
+            cur.execute('SELECT * FROM pull_proxies ORDER BY created_at DESC')
+            rows = cur.fetchall()
+            columns = [description[0] for description in cur.description]
             return [dict(zip(columns, row)) for row in rows]
         except sqlite3.Error as e:
             print(f"Failed to get all pull proxies: {e}")
@@ -582,7 +550,7 @@ class Database:
                 values.append(proxy_id)
                 
                 query = f"UPDATE pull_proxies SET {', '.join(set_clause)} WHERE id = ?"
-                self.cursor.execute(query, values)
+                cur.execute(query, values)
                 self.connection.commit()
                 return True
             return False
@@ -593,7 +561,8 @@ class Database:
     def delete_pull_proxy(self, vhost: str, app: str, stream: str) -> bool:
         """Delete pull proxy by vhost, app, stream"""
         try:
-            self.cursor.execute('DELETE FROM pull_proxies WHERE vhost = ? AND app = ? AND stream = ?', 
+            cur = self._cursor()
+            cur.execute('DELETE FROM pull_proxies WHERE vhost = ? AND app = ? AND stream = ?', 
                               (vhost, app, stream))
             self.connection.commit()
             return True
@@ -606,12 +575,13 @@ class Database:
     def get_proxy_urls(self, proxy_id: int) -> List[Dict[str, Any]]:
         """获取某个代理的所有地址，按 priority 升序，params 字段自动反序列化为 dict"""
         try:
-            self.cursor.execute(
+            cur = self._cursor()
+            cur.execute(
                 'SELECT * FROM pull_proxy_urls WHERE proxy_id = ? ORDER BY priority ASC, id ASC',
                 (proxy_id,)
             )
-            rows = self.cursor.fetchall()
-            columns = [d[0] for d in self.cursor.description]
+            rows = cur.fetchall()
+            columns = [d[0] for d in cur.description]
             result = []
             for row in rows:
                 item = dict(zip(columns, row))
@@ -631,12 +601,13 @@ class Database:
         urls 格式: [{"url": "...", "params": {"schema": "hls", "rtp_type": "0", ...}}, ...]
         """
         try:
-            self.cursor.execute('DELETE FROM pull_proxy_urls WHERE proxy_id = ?', (proxy_id,))
+            cur = self._cursor()
+            cur.execute('DELETE FROM pull_proxy_urls WHERE proxy_id = ?', (proxy_id,))
             for i, item in enumerate(urls):
                 params = item.get('params', {})
                 if not isinstance(params, dict):
                     params = {}
-                self.cursor.execute(
+                cur.execute(
                     'INSERT INTO pull_proxy_urls (proxy_id, url, params, priority) VALUES (?, ?, ?, ?)',
                     (proxy_id, item.get('url', ''), json.dumps(params, ensure_ascii=False), i)
                 )
@@ -682,10 +653,11 @@ class Database:
         按 event_type 分组，每组内按 priority ASC 排序。
         """
         try:
-            self.cursor.execute(
+            cur = self._cursor()
+            cur.execute(
                 'SELECT * FROM plugin_bindings ORDER BY event_type, priority ASC, id ASC'
             )
-            rows = self.cursor.fetchall()
+            rows = cur.fetchall()
             from collections import OrderedDict
             groups: OrderedDict = OrderedDict()
             for row in rows:
@@ -709,12 +681,13 @@ class Database:
         返回 [{"id":..., "plugin_name":..., "params":{...}, "priority":..., "enabled":...}, ...]
         """
         try:
-            self.cursor.execute(
+            cur = self._cursor()
+            cur.execute(
                 'SELECT * FROM plugin_bindings WHERE event_type=? ORDER BY priority ASC, id ASC',
                 (event_type,)
             )
             result = []
-            for row in self.cursor.fetchall():
+            for row in cur.fetchall():
                 d = dict(row)
                 try:
                     d['params'] = json.loads(d.get('params') or '{}')
@@ -737,7 +710,7 @@ class Database:
         """
         try:
             params_json = json.dumps(params or {}, ensure_ascii=False)
-            self.cursor.execute(
+            cur.execute(
                 '''
                 INSERT INTO plugin_bindings (event_type, plugin_name, params, priority, enabled, updated_at)
                 VALUES (?, ?, ?, ?, ?, current_timestamp)
@@ -751,15 +724,15 @@ class Database:
             self.connection.rollback()
             return False
 
-    def delete_plugin_binding_item(self, event_type: str, plugin_name: str, row_id: int | None = None) -> bool:
+    def delete_plugin_binding_item(self, event_type: str, plugin_name: str, row_id: Optional[int] = None) -> bool:
         """删除单条事件-插件绑定。若提供 row_id 则按 id 精确删除，否则删除该事件下所有同名绑定"""
         try:
             if row_id is not None:
-                self.cursor.execute(
+                cur.execute(
                     'DELETE FROM plugin_bindings WHERE id=?', (row_id,)
                 )
             else:
-                self.cursor.execute(
+                cur.execute(
                     'DELETE FROM plugin_bindings WHERE event_type=? AND plugin_name=?',
                     (event_type, plugin_name)
                 )
@@ -772,7 +745,8 @@ class Database:
     def delete_plugin_bindings_for_event(self, event_type: str) -> bool:
         """删除某个事件类型下的所有绑定"""
         try:
-            self.cursor.execute(
+            cur = self._cursor()
+            cur.execute(
                 'DELETE FROM plugin_bindings WHERE event_type=?',
                 (event_type,)
             )
@@ -794,14 +768,15 @@ class Database:
         enabled 控制整组绑定的启用状态。
         """
         try:
-            self.cursor.execute(
+            cur = self._cursor()
+            cur.execute(
                 'DELETE FROM plugin_bindings WHERE event_type=?', (event_type,)
             )
             for idx, item in enumerate(bindings):
                 plugin_name = item.get('plugin_name') or item.get('name', '')
                 params = item.get('params') or {}
                 params_json = json.dumps(params, ensure_ascii=False)
-                self.cursor.execute(
+                cur.execute(
                     '''
                     INSERT INTO plugin_bindings (event_type, plugin_name, params, priority, enabled, updated_at)
                     VALUES (?, ?, ?, ?, ?, current_timestamp)
