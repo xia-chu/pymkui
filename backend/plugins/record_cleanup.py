@@ -19,6 +19,7 @@ from py_plugin import PluginBase
 
 
 _CHECK_INTERVAL_SEC  = 3600   # 每小时检查一次
+_cleanup_started     = False  # 防止重复启动
 
 
 def _do_cleanup(max_size_bytes: float, max_days: int):
@@ -134,6 +135,11 @@ class RecordCleanup(PluginBase):
         }
 
     def run(self, **kwargs) -> bool:
+        global _cleanup_started
+        if _cleanup_started:
+            return False
+        _cleanup_started = True
+
         # 从绑定参数中读取配置（可在插件管理页面修改）
         # 未配置时回落到 params() 中定义的默认值
         schema       = self.params()
