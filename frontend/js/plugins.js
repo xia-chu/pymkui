@@ -73,7 +73,7 @@ function renderPluginList() {
                     ${typeBadge}
                 </div>
             </div>
-            <p class="text-white/50 text-sm mb-2 line-clamp-2">${escHtml(p.description)}</p>
+            <p class="text-white/50 text-sm mb-2 line-clamp-2" title="${escHtml(p.description)}">${escHtml(p.description)}</p>
             <span class="text-white/30 text-xs">v${escHtml(p.version)}</span>
         </div>`;
     }).join('');
@@ -236,7 +236,7 @@ function _renderSelectedList() {
             <i class="fa fa-grip-vertical text-white/30 text-xs shrink-0"></i>
             <span class="font-mono text-sm text-white font-semibold">${escHtml(p.name)}</span>
             ${idxBadge}${typeBadge}
-            <span class="text-white/40 text-xs truncate max-w-[120px]">${escHtml(p.description)}</span>
+            <span class="text-white/40 text-xs truncate max-w-[120px]" title="${escHtml(p.description)}">${escHtml(p.description)}</span>
             <button type="button" onclick="openParamsModal('${escHtml(item.paramKey)}')"
                 class="ml-auto shrink-0 text-yellow-400/70 hover:text-yellow-400 transition-colors text-xs" title="编辑绑定参数">
                 <i class="fa fa-cog mr-1"></i>参数
@@ -282,7 +282,7 @@ function _renderAvailableList() {
             <i class="fa fa-grip-vertical text-white/30 text-xs shrink-0"></i>
             <span class="font-mono text-sm text-white font-semibold">${escHtml(p.name)}</span>
             ${typeBadge}${multiBadge}
-            <span class="text-white/40 text-xs truncate max-w-[140px]">${escHtml(p.description)}</span>
+            <span class="text-white/40 text-xs truncate max-w-[140px]" title="${escHtml(p.description)}">${escHtml(p.description)}</span>
         </div>`;
     }).join('');
 }
