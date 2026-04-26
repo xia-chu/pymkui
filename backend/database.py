@@ -25,6 +25,60 @@ class Database:
         self.cursor.execute("PRAGMA foreign_keys = ON")
 
         self._create_tables()
+    
+    def _get_local_timezone(self):
+        """获取本地时区"""
+        import time
+        import pytz
+        try:
+            return pytz.timezone(time.tzname[0] if time.tzname[0] else 'UTC')
+        except Exception:
+            return None
+    
+    def _date_to_timestamp_range(self, date_str):
+        """将日期字符串转换为当天的时间戳范围"""
+        import datetime
+        import time
+        try:
+            date_obj = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+            # 尝试使用本地时区
+            local_tz = self._get_local_timezone()
+            if local_tz:
+                local_date = local_tz.localize(date_obj)
+                start_of_day = int(local_date.timestamp())
+            else:
+                # 如果无法获取本地时区，使用默认方式
+                start_of_day = int(time.mktime(date_obj.timetuple()))
+            end_of_day = start_of_day + 86399  # 当天23:59:59
+            return start_of_day, end_of_day
+        except ValueError:
+            return None, None
+    
+    def _month_to_timestamp_range(self, year, month):
+        """将年月转换为该月的时间戳范围"""
+        import datetime
+        import time
+        try:
+            start_date = datetime.datetime(year, month, 1)
+            if month == 12:
+                end_date = datetime.datetime(year + 1, 1, 1)
+            else:
+                end_date = datetime.datetime(year, month + 1, 1)
+            
+            # 尝试使用本地时区
+            local_tz = self._get_local_timezone()
+            if local_tz:
+                start_date_local = local_tz.localize(start_date)
+                end_date_local = local_tz.localize(end_date)
+                start_ts = int(start_date_local.timestamp())
+                end_ts = int(end_date_local.timestamp()) - 1  # 当月最后一秒
+            else:
+                # 如果无法获取本地时区，使用默认方式
+                start_ts = int(time.mktime(start_date.timetuple()))
+                end_ts = int(time.mktime(end_date.timetuple())) - 1
+            return start_ts, end_ts
+        except Exception:
+            return None, None
 
     def _cursor(self) -> sqlite3.Cursor:
         """每次调用返回一个新的独立游标，避免递归使用同一游标导致报错"""
@@ -311,8 +365,11 @@ class Database:
             if stream:
                 clauses.append("stream = ?"); params.append(stream)
             if date:
-                # date 格式 YYYY-MM-DD，与 created_at 前10位匹配
-                clauses.append("substr(created_at, 1, 10) = ?"); params.append(date)
+                # 使用抽象的方法将日期转换为时间戳范围
+                start_of_day, end_of_day = self._date_to_timestamp_range(date)
+                if start_of_day and end_of_day:
+                    clauses.append("start_time >= ?"); params.append(start_of_day)
+                    clauses.append("start_time <= ?"); params.append(end_of_day)
             if start_ts:
                 clauses.append("start_time >= ?"); params.append(start_ts)
             if end_ts:
@@ -426,17 +483,22 @@ class Database:
     def delete_recordings_by_stream_date(self, vhost: str, app: str, stream: str, date: str) -> int:
         """删除指定流某天的全部录像记录（date: YYYY-MM-DD），返回删除条数"""
         try:
+            # 使用抽象的方法将日期转换为时间戳范围
+            start_of_day, end_of_day = self._date_to_timestamp_range(date)
+            if not start_of_day or not end_of_day:
+                return 0  # 日期格式错误，返回0
+            
             cur = self._cursor()
             cur.execute(
-                "SELECT id, file_path FROM recordings WHERE vhost=? AND app=? AND stream=? AND substr(created_at,1,10)=?",
-                (vhost, app, stream, date)
+                "SELECT id, file_path FROM recordings WHERE vhost=? AND app=? AND stream=? AND start_time >= ? AND start_time <= ?",
+                (vhost, app, stream, start_of_day, end_of_day)
             )
             rows = cur.fetchall()
             for r in rows:
                 self._remove_file_and_empty_parents(r["file_path"] if "file_path" in r.keys() else None)
             cur.execute(
-                "DELETE FROM recordings WHERE vhost=? AND app=? AND stream=? AND substr(created_at,1,10)=?",
-                (vhost, app, stream, date)
+                "DELETE FROM recordings WHERE vhost=? AND app=? AND stream=? AND start_time >= ? AND start_time <= ?",
+                (vhost, app, stream, start_of_day, end_of_day)
             )
             self.connection.commit()
             return len(rows)
@@ -448,9 +510,14 @@ class Database:
                             app: str = "", stream: str = "", vhost: str = "") -> list:
         """返回指定年月内有录像的日期列表（YYYY-MM-DD 字符串列表）"""
         try:
-            prefix = f"{year:04d}-{month:02d}-"
-            clauses = ["substr(created_at, 1, 7) = ?"]
-            params: list = [f"{year:04d}-{month:02d}"]
+            import datetime
+            # 使用抽象的方法将年月转换为时间戳范围
+            start_ts, end_ts = self._month_to_timestamp_range(year, month)
+            if not start_ts or not end_ts:
+                return []  # 如果转换失败，返回空列表
+            
+            clauses = ["start_time >= ?", "start_time <= ?"]
+            params: list = [start_ts, end_ts]
             if vhost:
                 clauses.append("vhost = ?"); params.append(vhost)
             if app:
@@ -458,12 +525,29 @@ class Database:
             if stream:
                 clauses.append("stream = ?"); params.append(stream)
             where = "WHERE " + " AND ".join(clauses)
+            
             cur = self._cursor()
+            # 查询该月内的所有录像记录
             cur.execute(
-                f"SELECT DISTINCT substr(created_at, 1, 10) AS d FROM recordings {where} ORDER BY d",
+                f"SELECT start_time FROM recordings {where}",
                 params,
             )
-            return [row["d"] for row in cur.fetchall()]
+            
+            # 转换时间戳为日期字符串并去重
+            dates = set()
+            for row in cur.fetchall():
+                try:
+                    ts = row["start_time"]
+                    if ts:
+                        # 转换为本地时区的日期
+                        date_obj = datetime.datetime.fromtimestamp(ts)
+                        date_str = date_obj.strftime("%Y-%m-%d")
+                        dates.add(date_str)
+                except Exception:
+                    pass
+            
+            # 排序并返回
+            return sorted(list(dates))
         except Exception as e:
             mk_logger.log_warn(f"get_recording_dates error: {e}")
             return []
