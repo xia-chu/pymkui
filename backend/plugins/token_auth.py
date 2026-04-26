@@ -63,6 +63,11 @@ class TokenAuthBase(PluginBase):
                 "description": "token 最大使用次数，-1 表示不限，默认 -1",
                 "default": -1,
             },
+            "allow_localhost": {
+                "type": "bool",
+                "description": "是否允许 localhost 访问忽略鉴权，默认 true",
+                "default": True,
+            },
         }
 
     # ── 子类需要实现的钩子 ────────────────────────────────────────────────────
@@ -81,6 +86,11 @@ class TokenAuthBase(PluginBase):
         vhost  = args.get("vhost", "__defaultVhost__")
         app    = args.get("app", "")
         stream = args.get("stream", "")
+        # 从sender获取客户端IP，支持IPv6
+        client_ip = ""
+        sender = kwargs.get("sender")
+        if isinstance(sender, dict) and "peer_ip" in sender:
+            client_ip = sender.get("peer_ip", "")
 
         # 通配符过滤：不命中则跳过，不消费事件
         vhost_filter  = binding_params.get("vhost_filter",  "*") or "*"
@@ -94,6 +104,15 @@ class TokenAuthBase(PluginBase):
                 f"(filter: {vhost_filter}/{app_filter}/{stream_filter})"
             )
             return False
+
+        # 检查是否是 localhost 访问
+        allow_localhost = binding_params.get("allow_localhost", True)
+        if isinstance(allow_localhost, str):
+            allow_localhost = allow_localhost.lower() not in ('false', '0', '')
+        if allow_localhost and client_ip in ('127.0.0.1', '::1', 'localhost'):
+            mk_logger.log_info(f"[{self.name}] allow localhost access {vhost}/{app}/{stream}")
+            self._allow(invoker, extra=binding_params)
+            return True
 
         expire_seconds    = int(binding_params.get("expire_seconds", 300))
         token_length      = int(binding_params.get("token_length", 16))
