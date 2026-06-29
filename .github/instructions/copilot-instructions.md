@@ -49,10 +49,6 @@ pymkui/
 ├── frontend/
 │   ├── index.html                # 主框架页（导航 + iframe 容器）
 │   ├── login.html                # 登录页
-│   ├── css/
-│   │   ├── common.css            # 全局公共样式
-│   │   ├── index.css             # 主框架样式
-│   │   └── login.css             # 登录页样式
 │   ├── js/
 │   │   ├── api.js                # ★ 全局 API 封装对象（Api.*）
 │   │   ├── dashboard.js          # 仪表板逻辑
